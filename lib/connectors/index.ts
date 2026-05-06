@@ -1,0 +1,38 @@
+import { aibaseConnector } from "@/lib/connectors/aibase";
+import { autohomeConnector } from "@/lib/connectors/autohome";
+import { bilibiliConnector } from "@/lib/connectors/bilibili";
+import { caixinConnector } from "@/lib/connectors/caixin";
+import { gamerskyConnector } from "@/lib/connectors/gamersky";
+import { githubTrendingConnector } from "@/lib/connectors/github-trending";
+import { kr36Connector } from "@/lib/connectors/kr36";
+import { qbitaiConnector } from "@/lib/connectors/qbitai";
+import type { SourceConnector } from "@/lib/connectors/types";
+import { thePaperConnector } from "@/lib/connectors/the-paper";
+import { toutiaoConnector } from "@/lib/connectors/toutiao";
+import { v2exConnector } from "@/lib/connectors/v2ex";
+import { xueqiuConnector } from "@/lib/connectors/xueqiu";
+import { zhihuConnector } from "@/lib/connectors/zhihu";
+
+const connectorList: SourceConnector[] = [
+  qbitaiConnector,
+  aibaseConnector,
+  githubTrendingConnector,
+  v2exConnector,
+  zhihuConnector,
+  toutiaoConnector,
+  thePaperConnector,
+  kr36Connector,
+  bilibiliConnector,
+  gamerskyConnector,
+  xueqiuConnector,
+  caixinConnector,
+  autohomeConnector
+];
+
+export const connectors = new Map(
+  connectorList.map((connector) => [connector.id, connector])
+);
+
+export function getConnector(sourceId: string) {
+  return connectors.get(sourceId);
+}
