@@ -44,14 +44,15 @@ At the time of the launch review, these sources were expected to fetch live data
 - 知乎热榜
 - 今日头条热榜
 - 澎湃新闻
+- 36氪
 - B 站热门
 - 游民星空
 - 财新
 - 汽车之家
 
-These sources may use fallback data until we add better authenticated/API access:
+These sources may still use fallback data under source-side limits:
 
-- 36氪: current page can return captcha/anti-crawl content from the server environment
+- 36氪: `资讯-推荐` page normally uses embedded page JSON, but can still return captcha/anti-crawl content from the server environment
 - 雪球: hot topics can use anonymous cookies, but `XUEQIU_COOKIE` is still more stable in production
 
 This fallback state is acceptable for the first launch.
@@ -315,7 +316,7 @@ Source cards show fallback data:
 
 - First run `curl -sS "http://127.0.0.1:3000/api/boards?refresh=force"`.
 - Check `docker compose logs -f app`.
-- 36氪 captcha and 雪球 auth limits are known source-side limits.
+- 36氪 anti-crawl/captcha and 雪球 auth limits are known source-side limits.
 
 Docker build cannot pull Node image:
 

@@ -58,12 +58,12 @@ ANYKNEWS_PUBLIC_RSSHUB_BASE_URLS=https://rsshub.app,https://rsshub.rssforever.co
 | 知乎热榜 | Working | Public Zhihu hot-list API, DailyHotApi fallback, optional `ZHIHU_COOKIE`/RSSHub fallback |
 | 今日头条热榜 | Working | JSON hot-board endpoint, DailyHotApi fallback |
 | 澎湃新闻 | Working | HTML, DailyHotApi fallback |
-| 36氪 | Working with fallback | Embedded page JSON, DailyHotApi fallback |
+| 36氪 | Working with fallback | `资讯-推荐` embedded page JSON, DailyHotApi fallback |
 | B 站热门 | Working | JSON API, DailyHotApi fallback |
 | 游民星空 | Working | HTML |
 | 雪球 | Working with fallback | First-party hot topics endpoint with anonymous cookie, RSSHub `/xueqiu/today` fallback; set `XUEQIU_COOKIE` for stable production use |
 | 财新 | Working | HTML |
-| 汽车之家 | Working | HTML |
+| 汽车之家 | Working | `今日焦点`/latest list HTML |
 
 ## Verification
 

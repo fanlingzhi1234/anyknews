@@ -35,12 +35,12 @@ export const sourceHomeUrls: Record<string, string> = {
   general: "https://www.zhihu.com/hot",
   toutiao: "https://www.toutiao.com",
   "the-paper": "https://www.thepaper.cn",
-  biz: "https://36kr.com",
+  biz: "https://36kr.com/information/web_recommend/",
   ent: "https://www.bilibili.com/v/popular/all",
   gamersky: "https://www.gamersky.com",
   finance: "https://xueqiu.com",
   caixin: "https://www.caixin.com",
-  auto: "https://www.autohome.com.cn/news"
+  auto: "https://www.autohome.com.cn/all/"
 };
 
 export const categories: { label: NewsCategory; anchor: string }[] = [
@@ -193,8 +193,8 @@ export const sources: NewsSource[] = [
     logo: "36",
     tone: "biz",
     name: "36氪",
-    board: "快讯",
-    footer: "14分钟前更新 · RSS",
+    board: "资讯推荐",
+    footer: "14分钟前更新 · 页面数据",
     items: [
       ["AI 办公产品进入付费增长期，企业版成为竞争重点", "项目管理、会议纪要和销售场景率先落地", "新"],
       ["具身智能公司完成融资，机器人量产线启动", "订单和交付能力是资本关注点", "2h"],
@@ -288,8 +288,8 @@ export const sources: NewsSource[] = [
     logo: "车",
     tone: "car",
     name: "汽车之家",
-    board: "行业新闻",
-    footer: "1小时前更新 · RSS",
+    board: "今日焦点",
+    footer: "1小时前更新 · HTML",
     items: [
       ["智能驾驶车型密集发布，城市 NOA 覆盖继续扩大", "新车型配置和价格成为用户关注重点", "新"],
       ["新能源车企公布交付数据，海外市场增速明显", "销量、毛利和出海渠道同时受关注", "2h"],

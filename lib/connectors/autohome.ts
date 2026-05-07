@@ -7,7 +7,7 @@ import {
 } from "@/lib/connectors/shared";
 import type { SourceConnector } from "@/lib/connectors/types";
 
-const autohomeUrl = "http://www.autohome.com.cn/news/";
+const autohomeUrl = "https://www.autohome.com.cn/all/";
 
 export const autohomeConnector: SourceConnector = {
   id: "auto",
@@ -19,7 +19,7 @@ export const autohomeConnector: SourceConnector = {
 
     const items = extractLinksFromHtml(html, {
         baseUrl: autohomeUrl,
-        hrefIncludes: ["/news/"],
+        hrefIncludes: ["/news/", "/advice/", "/drive/", "/tech/"],
         limit: SOURCE_FETCH_LIMIT * 2,
         minTitleLength: 8
       })
