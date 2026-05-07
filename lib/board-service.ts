@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { categories, sourceHomeUrls, sources, type NewsCategory, type NewsItem } from "@/lib/news-data";
+import { categories, sourceHomeUrls, sources, type NewsCategory, type NewsItem, type SourceColor, type SourceDisplayType } from "@/lib/news-data";
 import { getConnector } from "@/lib/connectors";
 import type { FetchedItem } from "@/lib/connectors/types";
 
@@ -28,8 +28,12 @@ export type BoardSource = {
   tone: "ai" | "tech" | "news" | "biz" | "ent" | "fin" | "car";
   name: string;
   board: string;
+  color: SourceColor;
+  defaultSubscribed?: boolean;
+  displayType: SourceDisplayType;
   footer: string;
   homeUrl: string;
+  priority: number;
   status: "ok" | "refreshing" | "error";
   updatedAt: string;
   items: BoardItem[];

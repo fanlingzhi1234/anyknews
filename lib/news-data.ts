@@ -14,6 +14,9 @@ export type NewsItem = {
   url: string;
 };
 
+export type SourceDisplayType = "rank" | "timeline" | "article";
+export type SourceColor = "blue" | "red" | "green" | "amber" | "teal" | "slate" | "violet" | "rose";
+
 export type NewsSource = {
   id: string;
   category: NewsCategory;
@@ -22,6 +25,10 @@ export type NewsSource = {
   name: string;
   board: string;
   footer: string;
+  displayType: SourceDisplayType;
+  defaultSubscribed?: boolean;
+  color: SourceColor;
+  priority: number;
   items: NewsItem[];
 };
 
@@ -62,6 +69,10 @@ export const sources: NewsSource[] = [
     name: "量子位",
     board: "每日最新",
     footer: "5分钟前更新 · RSS/HTML",
+    displayType: "timeline",
+    defaultSubscribed: true,
+    color: "violet",
+    priority: 10,
     items: [
       ["AI Agent 工具链进入密集发布期，企业项目管理开始接入自动化流程", "机器人、研发、协同工具成为本周高频关键词", "新"],
       ["开源大模型推理框架更新，长上下文和多模态能力继续增强", "适合纳入日报中的基础设施方向", "2h"],
@@ -81,6 +92,10 @@ export const sources: NewsSource[] = [
     name: "AIbase",
     board: "AI新闻资讯",
     footer: "打开/手动刷新时更新 · HTML/RSSHub",
+    displayType: "timeline",
+    defaultSubscribed: true,
+    color: "blue",
+    priority: 20,
     items: [
       ["OpenAI 发布新模型能力更新，默认体验继续向更低幻觉和更强工具调用演进", "模型性能、产品体验和应用生态是关注重点", "热"],
       ["AI Agent 产品进入密集发布期，浏览器、办公和金融场景同步升温", "智能体从演示走向可执行工作流", "1h"],
@@ -100,6 +115,10 @@ export const sources: NewsSource[] = [
     name: "GitHub",
     board: "Trending",
     footer: "今日 09:40 · HTML 解析",
+    displayType: "rank",
+    defaultSubscribed: true,
+    color: "slate",
+    priority: 30,
     items: [
       ["browser-agent-lab / open-operator", "Computer-use agent framework for web workflows", "12k"],
       ["infra-kit / taskgraph", "A DAG scheduler for project automation", "8.4k"],
@@ -119,6 +138,10 @@ export const sources: NewsSource[] = [
     name: "V2EX",
     board: "热门节点",
     footer: "18分钟前更新 · API/HTML",
+    displayType: "article",
+    defaultSubscribed: true,
+    color: "slate",
+    priority: 40,
     items: [
       ["大家现在怎么管理一堆 AI 订阅和项目上下文？", "效率工具、项目管理、知识沉淀讨论集中", "184"],
       ["有没有适合个人服务器长期跑的 RSS 聚合方案", "部署成本、反爬、更新频率是核心讨论点", "136"],
@@ -138,6 +161,10 @@ export const sources: NewsSource[] = [
     name: "知乎",
     board: "热榜",
     footer: "打开/手动刷新时更新",
+    displayType: "rank",
+    defaultSubscribed: true,
+    color: "blue",
+    priority: 50,
     items: [
       ["AI Agent 会不会改变普通人的工作流？", "讨论集中在效率、替代、协作边界", "612万"],
       ["为什么越来越多团队把项目管理搬进自动化平台？", "从记录工具转向执行工具的趋势明显", "420万"],
@@ -157,6 +184,10 @@ export const sources: NewsSource[] = [
     name: "今日头条",
     board: "热榜",
     footer: "9分钟前更新 · JSON/API",
+    displayType: "rank",
+    defaultSubscribed: true,
+    color: "red",
+    priority: 60,
     items: [
       ["多地发布产业扶持政策，科技制造继续升温", "政策、资本和制造链条同时活跃", "热"],
       ["新能源汽车价格战进入新阶段", "车企降价、权益和渠道策略变化明显", "热"],
@@ -176,6 +207,10 @@ export const sources: NewsSource[] = [
     name: "澎湃新闻",
     board: "要闻",
     footer: "30分钟前更新 · RSS/HTML",
+    displayType: "timeline",
+    defaultSubscribed: true,
+    color: "slate",
+    priority: 70,
     items: [
       ["科技创新与产业政策成为今日新闻焦点", "产业链协同和资金支持被多次提及", "1h"],
       ["城市更新、交通和教育议题持续获得关注", "民生议题在多地新闻中占比上升", "2h"],
@@ -195,6 +230,10 @@ export const sources: NewsSource[] = [
     name: "36氪",
     board: "资讯推荐",
     footer: "14分钟前更新 · 页面数据",
+    displayType: "timeline",
+    defaultSubscribed: true,
+    color: "blue",
+    priority: 80,
     items: [
       ["AI 办公产品进入付费增长期，企业版成为竞争重点", "项目管理、会议纪要和销售场景率先落地", "新"],
       ["具身智能公司完成融资，机器人量产线启动", "订单和交付能力是资本关注点", "2h"],
@@ -214,6 +253,10 @@ export const sources: NewsSource[] = [
     name: "哔哩哔哩",
     board: "热门",
     footer: "7分钟前更新 · API",
+    displayType: "rank",
+    defaultSubscribed: true,
+    color: "rose",
+    priority: 90,
     items: [
       ["科技 UP 主体验最新 AI 设备，真实生产力如何？", "从新鲜感转向日常效率验证", "368万"],
       ["机器人挑战复杂家务任务，翻车与高光合集", "真实场景能力仍有明显边界", "201万"],
@@ -233,6 +276,10 @@ export const sources: NewsSource[] = [
     name: "游民星空",
     board: "今日要闻",
     footer: "22分钟前更新 · RSS/HTML",
+    displayType: "article",
+    defaultSubscribed: true,
+    color: "amber",
+    priority: 100,
     items: [
       ["开放世界新作公布实机演示，发售窗口确认", "地图规模、战斗和剧情成为讨论点", "新"],
       ["年度游戏更新路线图发布，多人模式扩展", "后续 DLC 和赛季内容明确", "2h"],
@@ -252,6 +299,10 @@ export const sources: NewsSource[] = [
     name: "雪球",
     board: "热门话题",
     footer: "打开/手动刷新时更新 · 热门话题",
+    displayType: "rank",
+    defaultSubscribed: true,
+    color: "blue",
+    priority: 110,
     items: [
       ["AI 算力链继续活跃，投资者关注业绩兑现节奏", "订单、毛利和供给能力是核心", "热"],
       ["美股科技龙头财报前瞻：云业务和 AI 支出是看点", "资本开支仍是估值锚点", "热"],
@@ -271,6 +322,10 @@ export const sources: NewsSource[] = [
     name: "财新",
     board: "科技财经",
     footer: "40分钟前更新 · RSS/HTML",
+    displayType: "timeline",
+    defaultSubscribed: true,
+    color: "red",
+    priority: 120,
     items: [
       ["科技公司资本开支上行，市场重新评估 AI 投资回报", "现金流和投资周期被重新审视", "1h"],
       ["半导体产业链订单变化引发关注", "设备、材料和封测环节同步观察", "3h"],
@@ -290,6 +345,10 @@ export const sources: NewsSource[] = [
     name: "汽车之家",
     board: "今日焦点",
     footer: "1小时前更新 · HTML",
+    displayType: "timeline",
+    defaultSubscribed: true,
+    color: "teal",
+    priority: 130,
     items: [
       ["智能驾驶车型密集发布，城市 NOA 覆盖继续扩大", "新车型配置和价格成为用户关注重点", "新"],
       ["新能源车企公布交付数据，海外市场增速明显", "销量、毛利和出海渠道同时受关注", "2h"],

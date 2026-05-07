@@ -9,7 +9,7 @@ Personal information-link aggregation dashboard.
 - Notifications: `/api/notifications/digest` for Feishu/email digests.
 - Data: no database. Source results live in an in-process TTL cache with typed seed fallback.
 - Connectors: on-demand refresh for the configured source list, with DailyHotApi/RSSHub fallbacks where available and seed data retained when a source blocks unauthenticated access.
-- Personalization: browser-local favorites, read state, ignored items, focus keywords and blocked keywords.
+- Personalization: browser-local source subscriptions, drag ordering, hidden sources, favorites, ignored items, focus keywords and blocked keywords.
 - Intelligence: trend radar, new-item movement, event clustering and source diagnostics derived from the currently loaded board data, tucked under the collapsed `看板洞察` section.
 - Infra: Docker Compose for the app only.
 
@@ -22,13 +22,16 @@ npm run dev
 
 Open `http://localhost:3000`.
 
-Opening the dashboard calls `/api/boards?refresh=stale`, which refreshes only sources whose cache has expired. The manual refresh button calls `/api/boards?refresh=force`.
+Opening the dashboard calls `/api/boards?refresh=stale`, which refreshes only sources whose cache has expired. The header refresh action refreshes the currently visible sources one by one.
 
 ## Dashboard Features
 
 - Card pagination: each source card shows 8 items per page while each connector can fetch up to `ANYKNEWS_SOURCE_ITEM_LIMIT` items.
-- Local personalization: favorite, mark read, ignore, focus keyword and blocked keyword rules are stored in browser `localStorage`.
+- Source subscriptions: the first navigation item is `我的订阅`; first-run defaults keep all current sources subscribed, and users can unsubscribe or hide sources locally.
+- Drag ordering: subscribed sources can be reordered in the source manager with browser-native drag and drop.
+- Local personalization: favorite, ignore, focus keyword and blocked keyword rules are stored in browser `localStorage`.
 - Focus view: default focus keywords are `AI agent`, `机器人`, and `项目管理`; users can add or remove keywords in the rule panel.
+- Local reset: clear `anyknews.preferences.v2` in browser localStorage to reset source subscriptions, ordering and keyword preferences.
 - Board insights: trend radar, event clustering and source diagnostics are available under the compact `看板洞察` drawer below the main title. The drawer is collapsed by default so the user-facing page stays focused on source cards.
 
 ## Cache Runtime

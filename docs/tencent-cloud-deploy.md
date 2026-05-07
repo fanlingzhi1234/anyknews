@@ -7,6 +7,7 @@ The current production target is intentionally lightweight:
 - One Docker Compose service: `app`
 - No Postgres, Redis, or persistent database
 - Data is fetched on page open/manual refresh and held in the server process TTL cache
+- Source subscriptions, drag ordering, hidden sources and keyword preferences are browser-local localStorage state
 - Notification code is kept in the app, but cron delivery is not enabled for the first launch
 
 ## 1. Local Preflight
