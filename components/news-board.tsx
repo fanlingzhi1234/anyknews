@@ -108,6 +108,7 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
   const [draggingSourceId, setDraggingSourceId] = useState<string | null>(null);
   const [trendChanges, setTrendChanges] = useState<TrendChange[]>([]);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const sourceCardRefs = useRef<Record<string, HTMLElement | null>>({});
   const normalizedPreferences = useMemo(
     () => normalizePreferences(preferences, board.sources),
     [board.sources, preferences]
@@ -252,6 +253,17 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
     }
   }, [isSearchOpen]);
 
+  const registerSourceCardRef = useCallback((sourceId: string, element: HTMLElement | null) => {
+    sourceCardRefs.current[sourceId] = element;
+  }, []);
+
+  const scrollSourceCardToTop = useCallback((sourceId: string) => {
+    sourceCardRefs.current[sourceId]?.scrollIntoView({
+      behavior: "smooth",
+      block: "start"
+    });
+  }, []);
+
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
@@ -270,6 +282,7 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
   }, []);
 
   async function refreshSource(sourceId: string) {
+    scrollSourceCardToTop(sourceId);
     setRefreshingSourceId(sourceId);
     setError(null);
     setRefreshSummary(null);
@@ -297,6 +310,7 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
           ? `${sourceName} 刷新失败，正在使用兜底数据`
           : `${sourceName} 已刷新`
       );
+      requestAnimationFrame(() => scrollSourceCardToTop(sourceId));
     } catch {
       setError("单源刷新失败，已保留当前列表");
     } finally {
@@ -873,6 +887,7 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
                 isRefreshing={refreshingSourceId === source.id}
                 key={source.id}
                 onLoadPage={loadSourcePage}
+                onRegisterCardRef={registerSourceCardRef}
                 onRefresh={refreshSource}
                 onToggleSourceSubscription={toggleSourceSubscription}
                 onToggleFavorite={(itemId) => togglePreferenceList("favoriteItemIds", itemId)}
@@ -898,6 +913,7 @@ function SourceCard({
   isPageLoading,
   isRefreshing,
   onLoadPage,
+  onRegisterCardRef,
   onRefresh,
   onToggleSourceSubscription,
   onToggleFavorite,
@@ -908,6 +924,7 @@ function SourceCard({
   isPageLoading: boolean;
   isRefreshing: boolean;
   onLoadPage: (sourceId: string, page: number) => Promise<boolean>;
+  onRegisterCardRef: (sourceId: string, element: HTMLElement | null) => void;
   onRefresh: (sourceId: string) => Promise<void>;
   onToggleSourceSubscription: (sourceId: string) => void;
   onToggleFavorite: (itemId: string) => void;
@@ -949,6 +966,7 @@ function SourceCard({
       aria-busy={isRefreshing || isPageLoading}
       data-category-key={source.categoryKey}
       id={source.id}
+      ref={(element) => onRegisterCardRef(source.id, element)}
     >
       <header className="sourceHead">
         <div className="sourceTitle">
@@ -1042,7 +1060,11 @@ function SourceCard({
           {source.status === "error" ? "使用兜底数据 · 需要配置" : source.footer}
         </span>
         {canPage ? (
-          <span className="pagerControls" aria-label={`${source.name} 分页`}>
+          <span
+            className="pagerControls"
+            aria-busy={isPageLoading}
+            aria-label={`${source.name} 分页`}
+          >
             <button
               aria-label="上一页"
               disabled={currentPage === 0 || isPageLoading}
@@ -1051,7 +1073,7 @@ function SourceCard({
             >
               <ChevronLeft size={16} strokeWidth={2.4} />
             </button>
-            <span>
+            <span aria-live="polite">
               {isPageLoading ? "加载中" : `${currentPage + 1}/${totalPages}`}
             </span>
             <button
