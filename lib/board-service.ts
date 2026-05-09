@@ -159,7 +159,7 @@ export async function getSourceItemsPage(
   await loadSourceCacheFromDisk();
 
   if (options.refresh === "force") {
-    await refreshSource(sourceId, { intent: "manual" });
+    await refreshSource(sourceId, { force: true, intent: "manual" });
   }
 
   if (options.refresh === "stale") {

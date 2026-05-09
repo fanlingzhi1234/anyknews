@@ -1304,10 +1304,7 @@ function filterBoardSources(sources: BoardSource[], query: string) {
             containsQuery([item.title, item.summary, item.metric], normalizedQuery)
           );
 
-      return {
-        ...source,
-        items
-      };
+      return withFilteredItems(source, items);
     })
     .filter((source) => source.items.length > 0);
 }
@@ -1356,12 +1353,20 @@ function applyPreferences(
         return true;
       });
 
-      return {
-        ...source,
-        items
-      };
+      return items.length === source.items.length ? source : withFilteredItems(source, items);
     })
     .filter((source) => source.items.length > 0);
+}
+
+function withFilteredItems(source: BoardSource, items: BoardSource["items"]): BoardSource {
+  return {
+    ...source,
+    diagnostic: {
+      ...source.diagnostic,
+      itemCount: items.length
+    },
+    items
+  };
 }
 
 function matchesAnyKeyword(item: BoardSource["items"][number], keywords: string[]) {
