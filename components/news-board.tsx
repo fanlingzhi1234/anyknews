@@ -1333,6 +1333,12 @@ function applyPreferences(
       return true;
     })
     .map((source) => {
+      const isDerivedItemView =
+        viewMode === "favorites" ||
+        viewMode === "focus" ||
+        !preferences.showHidden ||
+        preferences.hiddenItemIds.length > 0 ||
+        preferences.excludeKeywords.length > 0;
       const items = source.items.filter((item) => {
         if (!preferences.showHidden && preferences.hiddenItemIds.includes(item.id)) {
           return false;
@@ -1353,7 +1359,9 @@ function applyPreferences(
         return true;
       });
 
-      return items.length === source.items.length ? source : withFilteredItems(source, items);
+      return !isDerivedItemView && items.length === source.items.length
+        ? source
+        : withFilteredItems(source, items);
     })
     .filter((source) => source.items.length > 0);
 }
