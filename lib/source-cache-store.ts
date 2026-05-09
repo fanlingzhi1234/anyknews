@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { BoardItem, BoardSource } from "@/lib/board-service";
 
@@ -7,22 +7,19 @@ export type CompactSourceCacheItem = Pick<
   "id" | "title" | "summary" | "metric" | "url" | "originalUrl" | "publishedAt" | "sourceId" | "sourceName"
 >;
 
-export type CompactSourceMetadata = Omit<BoardSource, "items">;
-
 export type CompactSourceCacheEntry = {
-  backoffUntil?: string;
-  cachedAt?: string;
-  error?: string;
-  expiresAt?: string;
-  items: CompactSourceCacheItem[];
-  lastSuccessAt?: string;
-  source: CompactSourceMetadata;
   sourceId: string;
+  expiresAt: number;
+  updatedAt: number;
+  lastSuccessAt?: number;
+  backoffUntil?: number;
+  error?: string;
+  source: BoardSource;
 };
 
 type DiskPayload = {
-  entries: CompactSourceCacheEntry[];
   version: 1;
+  entries: CompactSourceCacheEntry[];
 };
 
 declare global {
@@ -31,6 +28,8 @@ declare global {
 
 const cache = globalThis.__anyknewsCompactSourceCache ?? new Map<string, CompactSourceCacheEntry>();
 globalThis.__anyknewsCompactSourceCache = cache;
+
+let persistQueue = Promise.resolve();
 
 export async function loadSourceCacheFromDisk(): Promise<Map<string, CompactSourceCacheEntry>> {
   if (isDiskCacheDisabled()) {
@@ -58,36 +57,56 @@ export function getCompactSourceCache(sourceId: string) {
   return cache.get(sourceId);
 }
 
+export function getCompactBoardSource(sourceId: string): BoardSource | undefined {
+  const entry = getCompactSourceCache(sourceId);
+  return entry ? toCompactBoardSource(entry) : undefined;
+}
+
 export function setCompactSourceCache(entry: CompactSourceCacheEntry) {
   const compactEntry = compactSourceCacheEntry(entry);
   cache.set(compactEntry.sourceId, compactEntry);
 }
 
 export function listCompactSourceCache() {
-  return Array.from(cache.values());
+  return Array.from(cache.values()).map(compactSourceCacheEntry);
 }
 
 export async function persistSourceCacheToDisk(): Promise<void> {
+  persistQueue = persistQueue.then(writeSourceCacheToDisk, writeSourceCacheToDisk);
+  return persistQueue;
+}
+
+export function getBackoffUntil(sourceId: string): number | undefined {
+  return cache.get(sourceId)?.backoffUntil;
+}
+
+export function toCompactBoardSource(entry: CompactSourceCacheEntry): BoardSource {
+  return sanitizeBoardSource(entry.source);
+}
+
+export function clearSourceCacheForTests() {
+  cache.clear();
+}
+
+async function writeSourceCacheToDisk() {
   if (isDiskCacheDisabled()) {
     return;
   }
 
   const diskCachePath = getDiskCachePath();
+  const cacheDir = path.dirname(diskCachePath);
+  const tempPath = path.join(
+    cacheDir,
+    `.${path.basename(diskCachePath)}.${process.pid}.${Date.now()}.tmp`
+  );
   const payload: DiskPayload = {
     version: 1,
-    entries: listCompactSourceCache().map(compactSourceCacheEntry)
+    entries: listCompactSourceCache()
   };
 
-  await mkdir(path.dirname(diskCachePath), { recursive: true });
-  await writeFile(diskCachePath, JSON.stringify(payload), "utf8");
-}
-
-export function getBackoffUntil(sourceId: string) {
-  return cache.get(sourceId)?.backoffUntil;
-}
-
-export function clearSourceCacheForTests() {
-  cache.clear();
+  await mkdir(cacheDir, { recursive: true });
+  await writeFile(tempPath, JSON.stringify(payload), "utf8");
+  await rename(tempPath, diskCachePath);
 }
 
 function getDiskCachePath() {
@@ -101,152 +120,201 @@ function isDiskCacheDisabled() {
 }
 
 function parseDiskPayload(payload: unknown) {
-  if (!isRecord(payload)) {
+  if (!isRecord(payload) || payload.version !== 1 || !Array.isArray(payload.entries)) {
     return [];
   }
 
-  const entries = Array.isArray(payload.entries) ? payload.entries : [];
-  return entries
+  return payload.entries
     .map(parseCacheEntry)
     .filter((entry): entry is CompactSourceCacheEntry => Boolean(entry));
 }
 
 function parseCacheEntry(entry: unknown): CompactSourceCacheEntry | undefined {
-  if (!isRecord(entry) || typeof entry.sourceId !== "string" || !isRecord(entry.source)) {
+  if (!isRecord(entry)) {
     return undefined;
   }
 
-  const source = compactSourceMetadata(entry.source);
-  if (!source || source.id !== entry.sourceId) {
+  const sourceId = requiredString(entry.sourceId);
+  const source = parseBoardSource(entry.source);
+  const expiresAt = requiredNumber(entry.expiresAt);
+  const updatedAt = requiredNumber(entry.updatedAt);
+
+  if (!sourceId || !source || source.id !== sourceId || expiresAt === undefined || updatedAt === undefined) {
     return undefined;
   }
 
-  return compactSourceCacheEntry({
-    backoffUntil: optionalString(entry.backoffUntil),
-    cachedAt: optionalString(entry.cachedAt),
-    error: optionalString(entry.error),
-    expiresAt: optionalString(entry.expiresAt),
-    items: Array.isArray(entry.items) ? entry.items.map(parseSourceItem).filter(isCompactSourceItem) : [],
-    lastSuccessAt: optionalString(entry.lastSuccessAt),
+  const parsedEntry: CompactSourceCacheEntry = {
+    sourceId,
+    expiresAt,
+    updatedAt,
     source,
-    sourceId: entry.sourceId
-  });
+    lastSuccessAt: optionalNumber(entry.lastSuccessAt),
+    backoffUntil: optionalNumber(entry.backoffUntil),
+    error: optionalString(entry.error)
+  };
+
+  return compactSourceCacheEntry(parsedEntry);
 }
 
 function compactSourceCacheEntry(entry: CompactSourceCacheEntry): CompactSourceCacheEntry {
-  const source = compactSourceMetadata(entry.source);
+  const sourceId = requiredString(entry.sourceId);
+  const expiresAt = requiredNumber(entry.expiresAt);
+  const updatedAt = requiredNumber(entry.updatedAt);
+  const source = sanitizeBoardSource(entry.source);
 
-  if (!source || source.id !== entry.sourceId) {
+  if (!sourceId || source.id !== sourceId || expiresAt === undefined || updatedAt === undefined) {
     throw new Error(`Invalid compact source cache entry for ${entry.sourceId}`);
   }
 
   return {
-    sourceId: entry.sourceId,
-    source,
-    items: entry.items.map(compactSourceItem),
-    cachedAt: entry.cachedAt,
-    expiresAt: entry.expiresAt,
-    lastSuccessAt: entry.lastSuccessAt,
-    backoffUntil: entry.backoffUntil,
-    error: entry.error
+    sourceId,
+    expiresAt,
+    updatedAt,
+    lastSuccessAt: optionalNumber(entry.lastSuccessAt),
+    backoffUntil: optionalNumber(entry.backoffUntil),
+    error: optionalString(entry.error),
+    source
   };
 }
 
-function compactSourceMetadata(source: unknown): CompactSourceMetadata | undefined {
+function parseBoardSource(source: unknown): BoardSource | undefined {
   if (!isRecord(source)) {
     return undefined;
   }
 
-  const diagnostic = isRecord(source.diagnostic)
-    ? {
-        cacheExpiresAt: optionalString(source.diagnostic.cacheExpiresAt),
-        errorMessage: optionalString(source.diagnostic.errorMessage),
-        itemCount: typeof source.diagnostic.itemCount === "number" ? source.diagnostic.itemCount : 0,
-        mode: isDiagnosticMode(source.diagnostic.mode) ? source.diagnostic.mode : "seed",
-        updatedAt: typeof source.diagnostic.updatedAt === "string" ? source.diagnostic.updatedAt : ""
-      }
-    : undefined;
+  try {
+    return sanitizeBoardSource(source);
+  } catch {
+    return undefined;
+  }
+}
+
+function sanitizeBoardSource(source: unknown): BoardSource {
+  if (!isRecord(source)) {
+    throw new Error("Invalid compact source cache source");
+  }
+
+  const id = requiredString(source.id);
+  const category = parseAllowed(source.category, categories);
+  const categoryKey = parseAllowed(source.categoryKey, categoryKeys);
+  const diagnostic = parseDiagnostic(source.diagnostic);
+  const logo = requiredString(source.logo);
+  const tone = parseAllowed(source.tone, tones);
+  const name = requiredString(source.name);
+  const board = requiredString(source.board);
+  const color = parseAllowed(source.color, colors);
+  const defaultSubscribed = typeof source.defaultSubscribed === "boolean" ? source.defaultSubscribed : undefined;
+  const displayType = parseAllowed(source.displayType, displayTypes);
+  const footer = requiredString(source.footer);
+  const homeUrl = requiredString(source.homeUrl);
+  const priority = requiredNumber(source.priority);
+  const status = parseAllowed(source.status, sourceStatuses);
+  const updatedAt = requiredString(source.updatedAt);
 
   if (
-    typeof source.id !== "string" ||
-    typeof source.category !== "string" ||
-    typeof source.categoryKey !== "string" ||
+    !id ||
+    !category ||
+    !categoryKey ||
     !diagnostic ||
-    typeof source.logo !== "string" ||
-    typeof source.tone !== "string" ||
-    typeof source.name !== "string" ||
-    typeof source.board !== "string" ||
-    typeof source.color !== "string" ||
-    typeof source.displayType !== "string" ||
-    typeof source.footer !== "string" ||
-    typeof source.homeUrl !== "string" ||
-    typeof source.priority !== "number" ||
-    typeof source.status !== "string" ||
-    typeof source.updatedAt !== "string"
+    !logo ||
+    !tone ||
+    !name ||
+    !board ||
+    !color ||
+    !displayType ||
+    !footer ||
+    !homeUrl ||
+    priority === undefined ||
+    !status ||
+    !updatedAt ||
+    !Array.isArray(source.items)
   ) {
+    throw new Error(`Invalid compact source cache source for ${id || "(unknown)"}`);
+  }
+
+  return {
+    id,
+    category,
+    categoryKey,
+    diagnostic,
+    logo,
+    tone,
+    name,
+    board,
+    color,
+    defaultSubscribed,
+    displayType,
+    footer,
+    homeUrl,
+    priority,
+    status,
+    updatedAt,
+    items: source.items.map(sanitizeBoardItem)
+  };
+}
+
+function parseDiagnostic(diagnostic: unknown): BoardSource["diagnostic"] | undefined {
+  if (!isRecord(diagnostic)) {
+    return undefined;
+  }
+
+  const mode = parseAllowed(diagnostic.mode, diagnosticModes);
+  const itemCount = requiredNumber(diagnostic.itemCount);
+  const updatedAt = requiredString(diagnostic.updatedAt);
+
+  if (!mode || itemCount === undefined || !updatedAt) {
     return undefined;
   }
 
   return {
-    id: source.id,
-    category: source.category as CompactSourceMetadata["category"],
-    categoryKey: source.categoryKey as CompactSourceMetadata["categoryKey"],
-    diagnostic,
-    logo: source.logo,
-    tone: source.tone as CompactSourceMetadata["tone"],
-    name: source.name,
-    board: source.board,
-    color: source.color as CompactSourceMetadata["color"],
-    defaultSubscribed: typeof source.defaultSubscribed === "boolean" ? source.defaultSubscribed : undefined,
-    displayType: source.displayType as CompactSourceMetadata["displayType"],
-    footer: source.footer,
-    homeUrl: source.homeUrl,
-    priority: source.priority,
-    status: source.status as CompactSourceMetadata["status"],
-    updatedAt: source.updatedAt
+    cacheExpiresAt: optionalString(diagnostic.cacheExpiresAt),
+    errorMessage: optionalString(diagnostic.errorMessage),
+    itemCount,
+    mode,
+    updatedAt
   };
 }
 
-function compactSourceItem(item: unknown): CompactSourceCacheItem {
+function sanitizeBoardItem(item: unknown): CompactSourceCacheItem {
   if (!isRecord(item)) {
     throw new Error("Invalid compact source cache item");
   }
 
-  const sourceId = stringOrEmpty(item.sourceId);
-  const sourceName = stringOrEmpty(item.sourceName);
-  const title = stringOrEmpty(item.title);
-  const url = stringOrEmpty(item.url);
+  const id = requiredString(item.id);
+  const title = requiredString(item.title);
+  const summary = stringOrEmpty(item.summary);
+  const metric = stringOrEmpty(item.metric);
+  const url = requiredString(item.url);
+  const originalUrl = requiredString(item.originalUrl);
+  const sourceId = requiredString(item.sourceId);
+  const sourceName = requiredString(item.sourceName);
 
-  if (!sourceId || !sourceName || !title || !url) {
+  if (!id || !title || !url || !originalUrl || !sourceId || !sourceName) {
     throw new Error("Compact source cache item is missing required fields");
   }
 
   return {
-    id: stringOrEmpty(item.id),
+    id,
     title,
-    summary: stringOrEmpty(item.summary),
-    metric: stringOrEmpty(item.metric),
+    summary,
+    metric,
     url,
-    originalUrl: stringOrEmpty(item.originalUrl) || url,
+    originalUrl,
     publishedAt: optionalString(item.publishedAt),
     sourceId,
     sourceName
   };
 }
 
-function parseSourceItem(item: unknown) {
-  try {
-    return compactSourceItem(item);
-  } catch {
-    return undefined;
-  }
-}
-
-function isCompactSourceItem(item: CompactSourceCacheItem | undefined): item is CompactSourceCacheItem {
-  return Boolean(item);
+function parseAllowed<const T extends readonly string[]>(value: unknown, allowed: T): T[number] | undefined {
+  return typeof value === "string" && allowed.includes(value) ? value : undefined;
 }
 
 function optionalString(value: unknown) {
+  return typeof value === "string" ? value : undefined;
+}
+
+function requiredString(value: unknown) {
   return typeof value === "string" ? value : undefined;
 }
 
@@ -254,14 +322,26 @@ function stringOrEmpty(value: unknown) {
   return typeof value === "string" ? value : "";
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+function optionalNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-function isDiagnosticMode(value: unknown): value is BoardSource["diagnostic"]["mode"] {
-  return value === "live" || value === "fallback" || value === "seed";
+function requiredNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isMissingFileError(error: unknown) {
   return isRecord(error) && error.code === "ENOENT";
 }
+
+const categories = ["AI资讯", "技术", "广义资讯", "科技资讯", "娱乐", "金融", "汽车"] as const;
+const categoryKeys = ["ai", "tech", "general", "biz", "ent", "finance", "auto"] as const;
+const colors = ["blue", "cyan", "violet", "emerald", "amber", "rose", "slate", "red", "green", "teal"] as const;
+const diagnosticModes = ["live", "fallback", "seed"] as const;
+const displayTypes = ["ranked", "bullets", "rank", "timeline", "article"] as const;
+const sourceStatuses = ["ok", "refreshing", "error"] as const;
+const tones = ["ai", "tech", "news", "biz", "ent", "fin", "car"] as const;

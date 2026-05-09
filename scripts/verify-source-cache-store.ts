@@ -1,23 +1,28 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { getSeedSourceData } from "@/lib/board-service";
+import type { BoardSource } from "@/lib/board-service";
 import type { CompactSourceCacheEntry } from "@/lib/source-cache-store";
 
 async function main() {
   const tempDir = await mkdtemp(path.join(tmpdir(), "anyknews-source-cache-"));
   const diskCachePath = path.join(tempDir, "source-cache.json");
+  const previousDiskCachePath = process.env.ANYKNEWS_DISK_CACHE_PATH;
+  const previousDisableDiskCache = process.env.ANYKNEWS_DISABLE_DISK_CACHE;
 
   process.env.ANYKNEWS_DISK_CACHE_PATH = diskCachePath;
   delete process.env.ANYKNEWS_DISABLE_DISK_CACHE;
 
+  const { getSeedSourceData } = await import("@/lib/board-service");
   const {
     clearSourceCacheForTests,
     getBackoffUntil,
+    getCompactBoardSource,
     getCompactSourceCache,
     loadSourceCacheFromDisk,
     persistSourceCacheToDisk,
-    setCompactSourceCache
+    setCompactSourceCache,
+    toCompactBoardSource
   } = await import("@/lib/source-cache-store");
 
   try {
@@ -28,41 +33,28 @@ async function main() {
     }
 
     const sourceId = source.id;
-    const sourceMetadata = {
-      id: source.id,
-      category: source.category,
-      categoryKey: source.categoryKey,
-      diagnostic: source.diagnostic,
-      logo: source.logo,
-      tone: source.tone,
-      name: source.name,
-      board: source.board,
-      color: source.color,
-      defaultSubscribed: source.defaultSubscribed,
-      displayType: source.displayType,
-      footer: source.footer,
-      homeUrl: source.homeUrl,
-      priority: source.priority,
-      status: source.status,
-      updatedAt: source.updatedAt
-    };
-    const lastSuccessAt = new Date("2026-05-09T08:00:00.000Z").toISOString();
-    const backoffUntil = new Date("2026-05-09T08:05:00.000Z").toISOString();
+    const expiresAt = Date.now() + 10 * 60 * 1000;
+    const updatedAt = Date.now();
+    const lastSuccessAt = updatedAt - 1000;
+    const backoffUntil = updatedAt + 5 * 60 * 1000;
+    const sourceWithRaw = injectRawItem(source);
     const entry: CompactSourceCacheEntry = {
       sourceId,
-      source: sourceMetadata,
-      items: source.items.map((item) => ({
-        ...item,
-        raw: { shouldNotPersist: true }
-      })) as CompactSourceCacheEntry["items"],
-      cachedAt: new Date("2026-05-09T08:01:00.000Z").toISOString(),
-      expiresAt: new Date("2026-05-09T08:10:00.000Z").toISOString(),
+      expiresAt,
+      updatedAt,
       lastSuccessAt,
-      backoffUntil
+      backoffUntil,
+      source: sourceWithRaw
     };
 
     clearSourceCacheForTests();
     setCompactSourceCache(entry);
+
+    const compactBeforePersist = toCompactBoardSource(entry);
+    if (!compactBeforePersist.items.length) {
+      throw new Error("Expected toCompactBoardSource to return a source with items.");
+    }
+
     await persistSourceCacheToDisk();
 
     const diskPayload = JSON.parse(await readFile(diskCachePath, "utf8")) as unknown;
@@ -80,21 +72,31 @@ async function main() {
       throw new Error(`Expected ${sourceId} to be restored from disk.`);
     }
 
+    if (restoredEntry.expiresAt !== expiresAt || restoredEntry.updatedAt !== updatedAt) {
+      throw new Error(`Expected numeric timestamps to be restored for ${sourceId}.`);
+    }
+
     if (restoredEntry.lastSuccessAt !== lastSuccessAt) {
       throw new Error(`Expected lastSuccessAt to be restored for ${sourceId}.`);
     }
 
     if (getBackoffUntil(sourceId) !== backoffUntil) {
-      throw new Error(`Expected backoffUntil to be restored for ${sourceId}.`);
+      throw new Error(`Expected numeric backoffUntil to be restored for ${sourceId}.`);
     }
 
-    if (restoredEntry.items.some((item) => "raw" in item)) {
+    if (!getCompactBoardSource(sourceId)?.items.length) {
+      throw new Error("Expected getCompactBoardSource to return a source with items.");
+    }
+
+    if (restoredEntry.source.items.some((item) => "raw" in item)) {
       throw new Error("Compact source cache restored an item raw field.");
     }
 
     console.log(`Verified disk cache for ${sourceId}.`);
   } finally {
     clearSourceCacheForTests();
+    restoreEnv("ANYKNEWS_DISK_CACHE_PATH", previousDiskCachePath);
+    restoreEnv("ANYKNEWS_DISABLE_DISK_CACHE", previousDisableDiskCache);
     await rm(tempDir, { recursive: true, force: true });
   }
 }
@@ -104,22 +106,45 @@ main().catch((error) => {
   process.exitCode = 1;
 });
 
+function injectRawItem(source: BoardSource): BoardSource {
+  return {
+    ...source,
+    items: source.items.map((item, index) =>
+      index === 0
+        ? ({
+            ...item,
+            raw: { shouldNotPersist: true }
+          } as BoardSource["items"][number])
+        : item
+    )
+  };
+}
+
 function assertNoRawItems(payload: unknown) {
-  if (!isRecord(payload) || !Array.isArray(payload.entries)) {
-    throw new Error("Expected compact disk cache payload with entries.");
+  if (!isRecord(payload) || payload.version !== 1 || !Array.isArray(payload.entries)) {
+    throw new Error("Expected compact disk cache payload with versioned entries.");
   }
 
   for (const entry of payload.entries) {
-    if (!isRecord(entry) || !Array.isArray(entry.items)) {
-      throw new Error("Expected compact disk cache entry items.");
+    if (!isRecord(entry) || !isRecord(entry.source) || !Array.isArray(entry.source.items)) {
+      throw new Error("Expected compact disk cache entry source items.");
     }
 
-    for (const item of entry.items) {
+    for (const item of entry.source.items) {
       if (isRecord(item) && "raw" in item) {
         throw new Error("Compact disk cache persisted an item raw field.");
       }
     }
   }
+}
+
+function restoreEnv(key: string, value: string | undefined) {
+  if (value === undefined) {
+    delete process.env[key];
+    return;
+  }
+
+  process.env[key] = value;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
