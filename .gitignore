@@ -2,6 +2,7 @@
 node_modules/
 out/
 dist/
+.cache/
 .env
 .env.*
 !.env.example
