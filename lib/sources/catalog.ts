@@ -9,8 +9,8 @@ export const categories: CategoryManifest[] = [
   { label: "AI资讯", anchor: "ai" },
   { label: "技术", anchor: "tech" },
   { label: "广义资讯", anchor: "general" },
-  { label: "科技资讯", anchor: "startup" },
-  { label: "娱乐", anchor: "entertainment" },
+  { label: "科技资讯", anchor: "biz" },
+  { label: "娱乐", anchor: "ent" },
   { label: "金融", anchor: "finance" },
   { label: "汽车", anchor: "auto" }
 ];

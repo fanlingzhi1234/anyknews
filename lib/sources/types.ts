@@ -72,5 +72,5 @@ export type SourceManifest = {
 
 export type CategoryManifest = {
   label: NewsCategory;
-  anchor: "ai" | "tech" | "general" | "startup" | "entertainment" | "finance" | "auto";
+  anchor: "ai" | "tech" | "general" | "biz" | "ent" | "finance" | "auto";
 };
