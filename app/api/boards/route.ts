@@ -14,6 +14,10 @@ export async function GET(request: Request) {
   const itemLimit = parseItemLimit(url.searchParams.get("itemLimit"));
   const includeCatalog = parseBoolean(url.searchParams.get("includeCatalog"));
 
+  if (hasSourceIdsParam && requestedSourceIds?.length === 0) {
+    return NextResponse.json({ error: "No valid sourceIds provided" }, { status: 400 });
+  }
+
   if (hasSourceIdsParam && sourceIds?.length === 0) {
     return NextResponse.json({ error: "No valid sourceIds provided" }, { status: 400 });
   }

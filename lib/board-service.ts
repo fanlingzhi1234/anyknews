@@ -342,7 +342,7 @@ function buildBoardPayload(options: {
 }) {
   const generatedAt = new Date().toISOString();
   const payloadSourceIds = options.includeCatalog
-    ? catalogSources.map((source) => source.id)
+    ? catalogSources.map((source) => source.id).slice(0, maxBoardSources)
     : options.selectedSourceIds;
   const boardSources = payloadSourceIds.map(
     (sourceId) => getBoardSourceFromCache(sourceId, generatedAt)

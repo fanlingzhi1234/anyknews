@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
 import { getBoardData } from "@/lib/board-service";
 import { getNotificationHealth } from "@/lib/notification-service";
-import { listCompactSourceCache, loadSourceCacheFromDisk } from "@/lib/source-cache-store";
+import { listCompactSourceCache } from "@/lib/source-cache-store";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  await loadSourceCacheFromDisk();
   const board = await getBoardData({ refresh: "none" });
   const notification = getNotificationHealth();
   const compactCacheEntries = listCompactSourceCache();
