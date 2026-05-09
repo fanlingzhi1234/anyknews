@@ -1,7 +1,26 @@
 import { createHash } from "node:crypto";
-import { categories, sourceHomeUrls, sources, type NewsCategory, type NewsItem, type SourceColor, type SourceDisplayType } from "@/lib/news-data";
+import {
+  categories,
+  catalogSources,
+  sourceHomeUrls,
+  sources,
+  type NewsCategory,
+  type NewsItem,
+  type SourceColor,
+  type SourceDisplayType
+} from "@/lib/news-data";
 import { getConnector } from "@/lib/connectors";
 import type { FetchedItem } from "@/lib/connectors/types";
+import {
+  getCompactBoardSource,
+  getCompactSourceCache,
+  listCompactSourceCache,
+  loadSourceCacheFromDisk,
+  persistSourceCacheToDisk,
+  setCompactSourceCache
+} from "@/lib/source-cache-store";
+import { decideSourceRefresh, type RefreshDecisionReason, type RefreshIntent } from "@/lib/source-refresh-planner";
+import { sourceCatalogById } from "@/lib/sources/catalog";
 
 export type CategoryKey = (typeof categories)[number]["anchor"];
 
@@ -48,11 +67,19 @@ export type BoardPayload = {
 
 export type RefreshMode = "none" | "stale" | "force";
 
+export type BoardDataOptions = {
+  refresh?: RefreshMode;
+  sourceIds?: string[];
+  itemLimit?: number;
+  includeCatalog?: boolean;
+};
+
 export type RefreshResult = {
   error?: string;
   fetchRunId?: string;
   itemsFound: number;
   itemsSaved: number;
+  reason?: RefreshDecisionReason;
   sourceId: string;
   status: "success" | "skipped" | "error";
 };
@@ -72,26 +99,34 @@ declare global {
 const categoryKeyByLabel = new Map(
   categories.map((category) => [category.label, category.anchor] as const)
 );
-const sourceConfigById = new Map(sources.map((source) => [source.id, source]));
+const sourceConfigById = new Map(catalogSources.map((source) => [source.id, source]));
 const sourceCache = globalThis.__anyknewsSourceCache ?? new Map<string, SourceCacheEntry>();
 globalThis.__anyknewsSourceCache = sourceCache;
 
 const defaultCacheTtlMs = getEnvSeconds("ANYKNEWS_CACHE_TTL_SECONDS", 10 * 60) * 1000;
 const errorCacheTtlMs = getEnvSeconds("ANYKNEWS_ERROR_CACHE_TTL_SECONDS", 2 * 60) * 1000;
 const sourceItemLimit = getPositiveIntegerEnv("ANYKNEWS_SOURCE_ITEM_LIMIT", 50);
+const boardItemLimit = getPositiveIntegerEnv("ANYKNEWS_BOARD_ITEM_LIMIT", 8);
+const failureBackoffMs = getEnvSeconds("ANYKNEWS_FAILURE_BACKOFF_SECONDS", 300) * 1000;
 const sourceCacheTtlMs: Record<string, number> = {
   general: getEnvSeconds("ANYKNEWS_ZHIHU_CACHE_TTL_SECONDS", 2 * 60) * 1000,
   tech: getEnvSeconds("ANYKNEWS_GITHUB_CACHE_TTL_SECONDS", 60 * 60) * 1000
 };
 
-export async function getBoardData(
-  options: { refresh?: RefreshMode } = {}
-): Promise<BoardPayload> {
+export async function getBoardData(options: BoardDataOptions = {}): Promise<BoardPayload> {
+  await loadSourceCacheFromDisk();
+
+  const selectedSourceIds = normalizeSourceIds(options.sourceIds);
+
   if (options.refresh === "force" || options.refresh === "stale") {
-    await refreshSources(options.refresh);
+    await refreshSources(options.refresh, selectedSourceIds);
   }
 
-  return buildBoardPayload();
+  return buildBoardPayload({
+    includeCatalog: options.includeCatalog,
+    itemLimit: options.itemLimit,
+    selectedSourceIds
+  });
 }
 
 export function getSeedBoardData(): BoardPayload {
@@ -102,14 +137,20 @@ export function getSeedBoardData(): BoardPayload {
 }
 
 export async function getSourceData(sourceId: string): Promise<BoardSource | undefined> {
-  return getCachedSource(sourceId) ?? getSeedSourceData(sourceId);
+  await loadSourceCacheFromDisk();
+
+  return getCachedSource(sourceId) ?? getCompactBoardSource(sourceId) ?? getSeedSourceData(sourceId);
 }
 
-export async function refreshSources(mode: Exclude<RefreshMode, "none">) {
+export async function refreshSources(
+  mode: Exclude<RefreshMode, "none">,
+  sourceIds = normalizeSourceIds()
+) {
   await Promise.all(
-    sources.map((source) =>
-      refreshSource(source.id, {
-        force: mode === "force"
+    sourceIds.map((sourceId) =>
+      refreshSource(sourceId, {
+        force: mode === "force",
+        intent: mode === "force" ? "force" : "page-open"
       })
     )
   );
@@ -117,16 +158,25 @@ export async function refreshSources(mode: Exclude<RefreshMode, "none">) {
 
 export async function refreshSource(
   sourceId: string,
-  options: { force?: boolean } = {}
+  options: { intent?: RefreshIntent; force?: boolean } = {}
 ): Promise<RefreshResult> {
-  const connector = getConnector(sourceId);
+  await loadSourceCacheFromDisk();
 
-  if (!connector) {
+  const connector = getConnector(sourceId);
+  const sourceManifest = sourceCatalogById.get(sourceId);
+  const now = Date.now();
+  const compactEntry = getCompactSourceCache(sourceId);
+  const existingEntry = sourceCache.get(sourceId);
+  const isRuntimeFresh = existingEntry ? isCacheFresh(existingEntry, now) : false;
+  const isCompactFresh = compactEntry ? now < compactEntry.expiresAt : false;
+
+  if (!sourceManifest) {
     return {
+      error: "Source was not found.",
       itemsFound: 0,
       itemsSaved: 0,
       sourceId,
-      status: "skipped"
+      status: "error"
     };
   }
 
@@ -142,12 +192,35 @@ export async function refreshSource(
     };
   }
 
-  const existingEntry = sourceCache.get(sourceId);
+  const decision = decideSourceRefresh(
+    sourceManifest,
+    options.force ? "force" : (options.intent ?? "manual"),
+    {
+      backoffUntil: compactEntry?.backoffUntil,
+      hasConnector: Boolean(connector),
+      isCacheFresh: isRuntimeFresh || isCompactFresh,
+      lastSuccessAt: compactEntry?.lastSuccessAt,
+      now
+    }
+  );
 
-  if (!options.force && existingEntry && isCacheFresh(existingEntry)) {
+  if (!decision.shouldFetch) {
     return {
+      error: decision.reason,
       itemsFound: 0,
       itemsSaved: 0,
+      reason: decision.reason,
+      sourceId,
+      status: "skipped"
+    };
+  }
+
+  if (!connector) {
+    return {
+      error: decision.reason,
+      itemsFound: 0,
+      itemsSaved: 0,
+      reason: decision.reason,
       sourceId,
       status: "skipped"
     };
@@ -162,7 +235,8 @@ export async function refreshSource(
 
     const updatedAt = new Date().toISOString();
     const source = normalizeFetchedSource(sourceConfig, fetchedItems, updatedAt);
-    const expiresAt = Date.now() + getSourceTtlMs(sourceId);
+    const updatedAtMs = Date.now();
+    const expiresAt = updatedAtMs + getSourceTtlMs(sourceId);
     const sourceWithDiagnostic = withSourceDiagnostic(source, {
       cacheExpiresAt: new Date(expiresAt).toISOString(),
       itemCount: source.items.length,
@@ -174,11 +248,19 @@ export async function refreshSource(
       expiresAt,
       mode: "live",
       source: sourceWithDiagnostic,
-      updatedAt: Date.now()
+      updatedAt: updatedAtMs
     });
+    setCompactSourceCache({
+      expiresAt,
+      lastSuccessAt: updatedAtMs,
+      source: sourceWithDiagnostic,
+      sourceId,
+      updatedAt: updatedAtMs
+    });
+    await persistSourceCacheToDisk();
 
     return {
-      fetchRunId: `cache-${sourceId}-${Date.now()}`,
+      fetchRunId: `cache-${sourceId}-${updatedAtMs}`,
       itemsFound: fetchedItems.length,
       itemsSaved: sourceWithDiagnostic.items.length,
       sourceId,
@@ -186,7 +268,12 @@ export async function refreshSource(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown refresh error";
-    const cachedFallback = existingEntry?.source ?? normalizeSeedSource(sourceConfig, new Date().toISOString());
+    const fallbackUpdatedAt = Date.now();
+    const fallbackExpiresAt = fallbackUpdatedAt + errorCacheTtlMs;
+    const cachedFallback =
+      existingEntry?.source ??
+      (compactEntry ? getCompactBoardSource(sourceId) : undefined) ??
+      normalizeSeedSource(sourceConfig, new Date().toISOString());
     const fallbackSource = markSourceError(
       cachedFallback,
       message
@@ -194,15 +281,25 @@ export async function refreshSource(
 
     sourceCache.set(sourceId, {
       error: message,
-      expiresAt: Date.now() + errorCacheTtlMs,
+      expiresAt: fallbackExpiresAt,
       mode: "fallback",
       source: fallbackSource,
-      updatedAt: Date.now()
+      updatedAt: fallbackUpdatedAt
     });
+    setCompactSourceCache({
+      backoffUntil: fallbackUpdatedAt + failureBackoffMs,
+      error: message,
+      expiresAt: fallbackExpiresAt,
+      lastSuccessAt: compactEntry?.lastSuccessAt,
+      source: fallbackSource,
+      sourceId,
+      updatedAt: fallbackUpdatedAt
+    });
+    await persistSourceCacheToDisk();
 
     return {
       error: message,
-      fetchRunId: `cache-${sourceId}-${Date.now()}`,
+      fetchRunId: `cache-${sourceId}-${fallbackUpdatedAt}`,
       itemsFound: 0,
       itemsSaved: 0,
       sourceId,
@@ -217,6 +314,8 @@ export function getSeedSourceData(sourceId: string): BoardSource | undefined {
 }
 
 export async function getItemById(itemId: string): Promise<BoardItem | undefined> {
+  await loadSourceCacheFromDisk();
+
   return getCachedItemById(itemId) ?? getSeedItemById(itemId);
 }
 
@@ -224,21 +323,34 @@ export async function recordClick() {
   // Click logging intentionally does nothing in the no-database runtime.
 }
 
-function buildBoardPayload() {
+function buildBoardPayload(options: {
+  includeCatalog?: boolean;
+  itemLimit?: number;
+  selectedSourceIds: string[];
+}) {
   const generatedAt = new Date().toISOString();
-  const boardSources = sources.map(
-    (source) => getCachedSource(source.id) ?? normalizeSeedSource(source, generatedAt)
+  const payloadSourceIds = options.includeCatalog
+    ? catalogSources.map((source) => source.id)
+    : options.selectedSourceIds;
+  const boardSources = payloadSourceIds.map(
+    (sourceId) => getBoardSourceFromCache(sourceId, generatedAt)
   );
 
-  return buildPayloadFromSources(boardSources, generatedAt);
+  return buildPayloadFromSources(boardSources, generatedAt, normalizeItemLimit(options.itemLimit));
 }
 
-function buildPayloadFromSources(boardSources: BoardSource[], generatedAt: string): BoardPayload {
+function buildPayloadFromSources(
+  boardSources: BoardSource[],
+  generatedAt: string,
+  itemLimit = boardItemLimit
+): BoardPayload {
+  const limitedSources = boardSources.map((source) => limitBoardSourceItems(source, itemLimit));
+
   return {
     generatedAt,
-    itemCount: boardSources.reduce((count, source) => count + source.items.length, 0),
-    sourceCount: boardSources.length,
-    sources: boardSources
+    itemCount: limitedSources.reduce((count, source) => count + source.items.length, 0),
+    sourceCount: limitedSources.length,
+    sources: limitedSources
   };
 }
 
@@ -246,8 +358,30 @@ function getCachedSource(sourceId: string) {
   return sourceCache.get(sourceId)?.source;
 }
 
+function getBoardSourceFromCache(sourceId: string, generatedAt: string): BoardSource {
+  const sourceConfig = sourceConfigById.get(sourceId);
+  const source =
+    getCachedSource(sourceId) ??
+    getCompactBoardSource(sourceId) ??
+    (sourceConfig ? normalizeSeedSource(sourceConfig, generatedAt) : undefined);
+
+  if (!source) {
+    throw new Error(`Cannot build payload for unknown source ${sourceId}`);
+  }
+
+  return source;
+}
+
 function getCachedItemById(itemId: string) {
-  return Array.from(sourceCache.values())
+  const runtimeItem = Array.from(sourceCache.values())
+    .flatMap((entry) => entry.source.items)
+    .find((item) => item.id === itemId);
+
+  if (runtimeItem) {
+    return runtimeItem;
+  }
+
+  return listCompactSourceCache()
     .flatMap((entry) => entry.source.items)
     .find((item) => item.id === itemId);
 }
@@ -259,7 +393,7 @@ function getSeedItemById(itemId: string): BoardItem | undefined {
 }
 
 function normalizeFetchedSource(
-  source: (typeof sources)[number],
+  source: (typeof catalogSources)[number],
   items: FetchedItem[],
   updatedAt: string
 ): BoardSource {
@@ -289,7 +423,7 @@ function normalizeFetchedSource(
   };
 }
 
-function normalizeSeedSource(source: (typeof sources)[number], updatedAt: string): BoardSource {
+function normalizeSeedSource(source: (typeof catalogSources)[number], updatedAt: string): BoardSource {
   const categoryKey = categoryKeyByLabel.get(source.category);
 
   if (!categoryKey) {
@@ -387,8 +521,42 @@ function getSourceTtlMs(sourceId: string) {
   return sourceCacheTtlMs[sourceId] ?? defaultCacheTtlMs;
 }
 
-function isCacheFresh(entry: SourceCacheEntry) {
-  return Date.now() < entry.expiresAt;
+function isCacheFresh(entry: SourceCacheEntry, now = Date.now()) {
+  return now < entry.expiresAt;
+}
+
+function normalizeSourceIds(sourceIds?: string[]) {
+  const requestedIds = sourceIds?.length ? sourceIds : sources.map((source) => source.id);
+  const uniqueIds = new Set<string>();
+
+  for (const sourceId of requestedIds) {
+    const normalizedId = sourceId.trim();
+
+    if (sourceConfigById.has(normalizedId)) {
+      uniqueIds.add(normalizedId);
+    }
+  }
+
+  return Array.from(uniqueIds);
+}
+
+function normalizeItemLimit(itemLimit?: number) {
+  return Number.isFinite(itemLimit) && itemLimit !== undefined && itemLimit > 0
+    ? Math.floor(itemLimit)
+    : boardItemLimit;
+}
+
+function limitBoardSourceItems(source: BoardSource, itemLimit: number): BoardSource {
+  const items = source.items.slice(0, itemLimit);
+
+  return {
+    ...source,
+    diagnostic: {
+      ...source.diagnostic,
+      itemCount: items.length
+    },
+    items
+  };
 }
 
 function getEnvSeconds(key: string, fallback: number) {

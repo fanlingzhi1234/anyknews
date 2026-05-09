@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
 import { getBoardData } from "@/lib/board-service";
 import { getNotificationHealth } from "@/lib/notification-service";
+import { listCompactSourceCache, loadSourceCacheFromDisk } from "@/lib/source-cache-store";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  await loadSourceCacheFromDisk();
   const board = await getBoardData({ refresh: "none" });
   const notification = getNotificationHealth();
+  const compactCacheEntries = listCompactSourceCache();
+  const now = Date.now();
   const unavailableSources = board.sources
     .filter((source) => source.status === "error")
     .map((source) => ({
@@ -30,6 +34,12 @@ export async function GET() {
     generatedAt: new Date().toISOString(),
     notification,
     runtime: {
+      cache: {
+        backoffEntries: compactCacheEntries.filter(
+          (entry) => entry.backoffUntil !== undefined && entry.backoffUntil > now
+        ).length,
+        diskEntries: compactCacheEntries.length
+      },
       cacheMode: "memory",
       timezone: process.env.TZ || "Asia/Shanghai"
     },
