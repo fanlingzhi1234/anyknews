@@ -466,7 +466,7 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
       return {
         ...normalized,
         sourceOrder: nextOrder,
-        subscribedSourceIds: nextOrder.filter((id) => normalized.subscribedSourceIds.includes(id))
+        subscribedSourceIds: nextOrder.filter((id) => subscribedSet.has(id))
       };
     });
   }
