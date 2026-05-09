@@ -17,7 +17,7 @@ import {
   Star,
   X
 } from "lucide-react";
-import { type BoardPayload, type BoardSource } from "@/lib/board-service";
+import { type BoardPayload, type BoardSource, type RefreshMode } from "@/lib/board-service";
 import { categories } from "@/lib/news-data";
 
 type NewsBoardProps = {
@@ -56,6 +56,12 @@ type TrendChange = {
   newCount: number;
   previousCount: number;
   sourceCount: number;
+};
+
+type LoadBoardOptions = {
+  force?: boolean;
+  includeCatalog?: boolean;
+  refresh?: RefreshMode;
 };
 
 const defaultPreferences: LocalPreferences = {
@@ -102,14 +108,20 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
   const [draggingSourceId, setDraggingSourceId] = useState<string | null>(null);
   const [trendChanges, setTrendChanges] = useState<TrendChange[]>([]);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const statusStats = getStatusStats(board);
   const normalizedPreferences = useMemo(
     () => normalizePreferences(preferences, board.sources),
     [board.sources, preferences]
   );
+  const normalizedPreferencesRef = useRef(normalizedPreferences);
+  const isSourceManagerOpenRef = useRef(isSourceManagerOpen);
+  const contentBoard = useMemo(
+    () => getSubscribedBoard(board, normalizedPreferences),
+    [board, normalizedPreferences]
+  );
+  const statusStats = getStatusStats(contentBoard);
   const personalizedSources = useMemo(
-    () => applyPreferences(board.sources, normalizedPreferences, viewMode),
-    [board.sources, normalizedPreferences, viewMode]
+    () => applyPreferences(contentBoard.sources, normalizedPreferences, viewMode),
+    [contentBoard.sources, normalizedPreferences, viewMode]
   );
   const categoryFilteredSources = useMemo(
     () => filterSourcesByCategory(personalizedSources, activeCategory),
@@ -125,20 +137,28 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
   );
   const preferenceCounts = useMemo(() => getPreferenceCounts(normalizedPreferences), [normalizedPreferences]);
   const trendInsights = useMemo(
-    () => buildTrendInsights(applyPreferences(board.sources, normalizedPreferences, "all")),
-    [board.sources, normalizedPreferences]
+    () => buildTrendInsights(applyPreferences(contentBoard.sources, normalizedPreferences, "all")),
+    [contentBoard.sources, normalizedPreferences]
   );
   const eventClusters = useMemo(
-    () => buildEventClusters(applyPreferences(board.sources, normalizedPreferences, "all")),
-    [board.sources, normalizedPreferences]
+    () => buildEventClusters(applyPreferences(contentBoard.sources, normalizedPreferences, "all")),
+    [contentBoard.sources, normalizedPreferences]
   );
-  const diagnostics = useMemo(() => buildDiagnostics(board), [board]);
+  const diagnostics = useMemo(() => buildDiagnostics(contentBoard), [contentBoard]);
   const isSearching = searchQuery.trim().length > 0;
   const activeScopeLabel = getActiveScopeLabel(activeCategory, viewMode);
   const managedSources = useMemo(
     () => orderSources(board.sources, normalizedPreferences.sourceOrder),
     [board.sources, normalizedPreferences.sourceOrder]
   );
+
+  useEffect(() => {
+    normalizedPreferencesRef.current = normalizedPreferences;
+  }, [normalizedPreferences]);
+
+  useEffect(() => {
+    isSourceManagerOpenRef.current = isSourceManagerOpen;
+  }, [isSourceManagerOpen]);
 
   useEffect(() => {
     const nextPreferences = normalizePreferences(preferences, board.sources);
@@ -150,20 +170,49 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
   }, [board.sources, preferences]);
 
   useEffect(() => {
-    const snapshot = buildTrendSnapshot(board.sources);
+    const snapshot = buildTrendSnapshot(contentBoard.sources);
     const previousSnapshot = loadTrendSnapshot();
 
-    setTrendChanges(buildTrendChanges(snapshot, previousSnapshot, board.sources));
+    setTrendChanges(buildTrendChanges(snapshot, previousSnapshot, contentBoard.sources));
     window.localStorage.setItem(TREND_SNAPSHOT_STORAGE_KEY, JSON.stringify(snapshot));
-  }, [board.sources]);
+  }, [contentBoard.sources]);
 
-  const loadBoard = useCallback(async (force = false) => {
+  const loadBoard = useCallback(async (options: LoadBoardOptions = {}) => {
+    const force = Boolean(options.force);
+    const includeCatalog = options.includeCatalog ?? isSourceManagerOpenRef.current;
+    const refresh = options.refresh ?? (force ? "force" : "stale");
+    const subscribedSourceIds = normalizedPreferencesRef.current.subscribedSourceIds;
+
     setIsLoading(true);
     setError(null);
     setRefreshSummary(null);
 
     try {
-      const response = await fetch(`/api/boards?refresh=${force ? "force" : "stale"}`, {
+      if (!subscribedSourceIds.length && !includeCatalog) {
+        setBoard((current) => ({
+          ...current,
+          generatedAt: new Date().toISOString(),
+          itemCount: 0,
+          sourceCount: 0,
+          sources: []
+        }));
+        return;
+      }
+
+      const params = new URLSearchParams({
+        itemLimit: String(CARD_ITEMS_PER_PAGE),
+        refresh
+      });
+
+      if (subscribedSourceIds.length) {
+        params.set("sourceIds", subscribedSourceIds.join(","));
+      }
+
+      if (includeCatalog) {
+        params.set("includeCatalog", "true");
+      }
+
+      const response = await fetch(`/api/boards?${params.toString()}`, {
         cache: "no-store"
       });
 
@@ -190,6 +239,12 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
   useEffect(() => {
     void loadBoard();
   }, [loadBoard]);
+
+  useEffect(() => {
+    if (isSourceManagerOpen) {
+      void loadBoard({ includeCatalog: true, refresh: "none" });
+    }
+  }, [isSourceManagerOpen, loadBoard]);
 
   useEffect(() => {
     if (isSearchOpen) {
@@ -354,16 +409,19 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
     setPreferences((current) => {
       const normalized = normalizePreferences(current, board.sources);
       const sourceSet = new Set(normalized.subscribedSourceIds);
+      let sourceOrder = normalized.sourceOrder;
 
       if (sourceSet.has(sourceId)) {
         sourceSet.delete(sourceId);
       } else {
         sourceSet.add(sourceId);
+        sourceOrder = moveAfterLastSubscribed(sourceOrder, sourceId, sourceSet);
       }
 
       return {
         ...normalized,
-        subscribedSourceIds: normalized.sourceOrder.filter((id) => sourceSet.has(id))
+        sourceOrder,
+        subscribedSourceIds: sourceOrder.filter((id) => sourceSet.has(id))
       };
     });
   }
@@ -386,14 +444,24 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
     });
   }
 
-  function reorderSources(activeSourceId: string, overSourceId: string) {
+  function placeSourceInSubscriptions(activeSourceId: string, overSourceId?: string) {
     if (activeSourceId === overSourceId) {
       return;
     }
 
     setPreferences((current) => {
       const normalized = normalizePreferences(current, board.sources);
-      const nextOrder = moveBefore(normalized.sourceOrder, activeSourceId, overSourceId);
+      const subscribedSet = new Set(normalized.subscribedSourceIds);
+
+      if (!normalized.sourceOrder.includes(activeSourceId)) {
+        return normalized;
+      }
+
+      subscribedSet.add(activeSourceId);
+
+      const nextOrder = overSourceId
+        ? moveBefore(normalized.sourceOrder, activeSourceId, overSourceId)
+        : moveAfterLastSubscribed(normalized.sourceOrder, activeSourceId, subscribedSet);
 
       return {
         ...normalized,
@@ -404,11 +472,15 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
   }
 
   function resetSourcePreferences() {
+    const defaultSourceIds = getDefaultSourceIds(board.sources);
+    const defaultSubscribedIds = getDefaultSubscribedSourceIds(board.sources);
+    const defaultSubscribedSet = new Set(defaultSubscribedIds);
+
     setPreferences((current) => ({
       ...normalizePreferences(current, board.sources),
       hiddenSourceIds: [],
-      sourceOrder: getDefaultSourceIds(board.sources),
-      subscribedSourceIds: getDefaultSourceIds(board.sources)
+      sourceOrder: defaultSourceIds,
+      subscribedSourceIds: defaultSourceIds.filter((sourceId) => defaultSubscribedSet.has(sourceId))
     }));
   }
 
@@ -647,7 +719,7 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
               </section>
               {isDiagnosticsOpen ? (
                 <section className="sourceDiagnostics" aria-label="数据源诊断明细">
-                  {board.sources.map((source) => (
+                  {contentBoard.sources.map((source) => (
                     <div className="sourceDiagnosticRow" key={source.id}>
                       <div>
                         <strong>{source.name}</strong>
@@ -747,7 +819,7 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
             draggingSourceId={draggingSourceId}
             onDragEnd={() => setDraggingSourceId(null)}
             onDragStart={setDraggingSourceId}
-            onReorder={reorderSources}
+            onDropInSubscribed={placeSourceInSubscriptions}
             onReset={resetSourcePreferences}
             onToggleHidden={toggleSourceHidden}
             onToggleSubscription={toggleSourceSubscription}
@@ -1077,7 +1149,7 @@ function SourceManager({
   draggingSourceId,
   onDragEnd,
   onDragStart,
-  onReorder,
+  onDropInSubscribed,
   onReset,
   onToggleHidden,
   onToggleSubscription,
@@ -1087,27 +1159,36 @@ function SourceManager({
   draggingSourceId: string | null;
   onDragEnd: () => void;
   onDragStart: (sourceId: string) => void;
-  onReorder: (activeSourceId: string, overSourceId: string) => void;
+  onDropInSubscribed: (activeSourceId: string, overSourceId?: string) => void;
   onReset: () => void;
   onToggleHidden: (sourceId: string) => void;
   onToggleSubscription: (sourceId: string) => void;
   preferences: LocalPreferences;
   sources: BoardSource[];
 }) {
-  const sourcesByCategory = categories.map((category) => ({
+  const availableSourcesByCategory = categories.map((category) => ({
     ...category,
-    sources: sources.filter((source) => source.category === category.label)
+    sources: sources.filter(
+      (source) =>
+        source.category === category.label &&
+        !preferences.subscribedSourceIds.includes(source.id)
+    )
   }));
   const subscribedSources = sources.filter((source) =>
     preferences.subscribedSourceIds.includes(source.id)
   );
+  const availableSourceCount = sources.length - subscribedSources.length;
+
+  function handleSubscribedDrop(activeSourceId: string, overSourceId?: string) {
+    onDropInSubscribed(activeSourceId, overSourceId);
+  }
 
   return (
     <section className="sourceManager" aria-label="信息源管理">
       <div className="sourceManagerHead">
         <div>
           <strong>信息源</strong>
-          <span>{preferences.subscribedSourceIds.length} 个订阅 · 拖拽调整顺序</span>
+          <span>{subscribedSources.length} 个订阅 · {availableSourceCount} 个可添加</span>
         </div>
         <button onClick={onReset} type="button">
           重置
@@ -1116,7 +1197,19 @@ function SourceManager({
       <div className="sourceManagerColumns">
         <div className="sourceManagerBlock">
           <div className="sourceManagerTitle">我的订阅</div>
-          <div className="sourceManagerList sourceManagerList-sortable">
+          <div
+            className="sourceManagerList sourceManagerList-sortable"
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => {
+              event.preventDefault();
+
+              const activeSourceId = event.dataTransfer.getData("text/plain");
+
+              if (activeSourceId) {
+                handleSubscribedDrop(activeSourceId);
+              }
+            }}
+          >
             {subscribedSources.length ? (
               subscribedSources.map((source) => (
                 <SourceManagerRow
@@ -1125,38 +1218,45 @@ function SourceManager({
                   key={source.id}
                   onDragEnd={onDragEnd}
                   onDragStart={onDragStart}
-                  onReorder={onReorder}
+                  onDropInSubscribed={handleSubscribedDrop}
                   onToggleHidden={onToggleHidden}
                   onToggleSubscription={onToggleSubscription}
                   preferences={preferences}
+                  role="subscribed"
                   source={source}
                 />
               ))
             ) : (
-              <span className="mutedText">暂无订阅源，可从右侧重新订阅。</span>
+              <span className="mutedText">暂无订阅源，可从右侧拖入或直接添加。</span>
             )}
           </div>
         </div>
         <div className="sourceManagerBlock sourceManagerBlock-wide">
-          <div className="sourceManagerTitle">全部来源</div>
+          <div className="sourceManagerTitle">可添加来源</div>
           <div className="sourceCategoryGrid">
-            {sourcesByCategory.map((group) => (
+            {availableSourcesByCategory.map((group) => (
               <div className="sourceCategoryBlock" key={group.anchor}>
                 <strong>{group.label}</strong>
                 <div className="sourceManagerList">
-                  {group.sources.map((source) => (
-                    <SourceManagerRow
-                      draggingSourceId={draggingSourceId}
-                      key={source.id}
-                      onDragEnd={onDragEnd}
-                      onDragStart={onDragStart}
-                      onReorder={onReorder}
-                      onToggleHidden={onToggleHidden}
-                      onToggleSubscription={onToggleSubscription}
-                      preferences={preferences}
-                      source={source}
-                    />
-                  ))}
+                  {group.sources.length ? (
+                    group.sources.map((source) => (
+                      <SourceManagerRow
+                        draggable
+                        draggingSourceId={draggingSourceId}
+                        key={source.id}
+                        onDragEnd={onDragEnd}
+                        onDragStart={onDragStart}
+                        onDropInSubscribed={handleSubscribedDrop}
+                        onToggleHidden={onToggleHidden}
+                        onToggleSubscription={onToggleSubscription}
+                        preferences={preferences}
+                        role="available"
+                        source={source}
+                      />
+                    ))
+                  ) : (
+                    <span className="mutedText">已全部订阅</span>
+                  )}
                 </div>
               </div>
             ))}
@@ -1172,20 +1272,22 @@ function SourceManagerRow({
   draggingSourceId,
   onDragEnd,
   onDragStart,
-  onReorder,
+  onDropInSubscribed,
   onToggleHidden,
   onToggleSubscription,
   preferences,
+  role,
   source
 }: {
   draggable?: boolean;
   draggingSourceId: string | null;
   onDragEnd: () => void;
   onDragStart: (sourceId: string) => void;
-  onReorder: (activeSourceId: string, overSourceId: string) => void;
+  onDropInSubscribed: (activeSourceId: string, overSourceId?: string) => void;
   onToggleHidden: (sourceId: string) => void;
   onToggleSubscription: (sourceId: string) => void;
   preferences: LocalPreferences;
+  role: "available" | "subscribed";
   source: BoardSource;
 }) {
   const isSubscribed = preferences.subscribedSourceIds.includes(source.id);
@@ -1194,7 +1296,7 @@ function SourceManagerRow({
 
   return (
     <div
-      className={`sourceManagerRow ${isHidden ? "sourceManagerRow-hidden" : ""} ${isDragging ? "sourceManagerRow-dragging" : ""}`}
+      className={`sourceManagerRow ${role === "available" ? "sourceManagerRow-available" : ""} ${isHidden ? "sourceManagerRow-hidden" : ""} ${isDragging ? "sourceManagerRow-dragging" : ""}`}
       draggable={draggable}
       onDragEnd={onDragEnd}
       onDragOver={(event) => event.preventDefault()}
@@ -1208,10 +1310,13 @@ function SourceManagerRow({
         onDragStart(source.id);
       }}
       onDrop={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
         const activeSourceId = event.dataTransfer.getData("text/plain");
 
-        if (activeSourceId) {
-          onReorder(activeSourceId, source.id);
+        if (role === "subscribed" && activeSourceId) {
+          onDropInSubscribed(activeSourceId, source.id);
         }
       }}
     >
@@ -1255,6 +1360,18 @@ function getStatusStats(board: BoardPayload) {
   return {
     error,
     ok: board.sources.length - error
+  };
+}
+
+function getSubscribedBoard(board: BoardPayload, preferences: LocalPreferences): BoardPayload {
+  const subscribedSourceIds = new Set(preferences.subscribedSourceIds);
+  const sources = board.sources.filter((source) => subscribedSourceIds.has(source.id));
+
+  return {
+    ...board,
+    itemCount: sources.reduce((count, source) => count + source.items.length, 0),
+    sourceCount: sources.length,
+    sources
   };
 }
 
@@ -1322,6 +1439,10 @@ function applyPreferences(
 
   return orderedSources
     .filter((source) => {
+      if (!preferences.subscribedSourceIds.includes(source.id)) {
+        return false;
+      }
+
       if (preferences.hiddenSourceIds.includes(source.id)) {
         return false;
       }
@@ -1428,12 +1549,18 @@ function loadLocalPreferences(sources: BoardSource[]): LocalPreferences {
 
 function normalizePreferences(preferences: Partial<LocalPreferences>, sources: BoardSource[]): LocalPreferences {
   const defaultSourceIds = getDefaultSourceIds(sources);
-  const sourceIdSet = new Set(defaultSourceIds);
-  const sourceOrder = mergeSourceOrder(preferences.sourceOrder ?? [], defaultSourceIds);
-  const subscribedSourceIds = (preferences.subscribedSourceIds?.length
-    ? preferences.subscribedSourceIds
-    : defaultSourceIds
-  ).filter((sourceId) => sourceIdSet.has(sourceId));
+  const defaultSubscribedSourceIds = getDefaultSubscribedSourceIds(sources);
+  const sourceOrder = mergeSourceOrder(
+    [...(preferences.sourceOrder ?? []), ...(preferences.subscribedSourceIds ?? [])],
+    defaultSourceIds
+  );
+  const hasExplicitSubscriptionState =
+    Array.isArray(preferences.subscribedSourceIds) &&
+    (preferences.subscribedSourceIds.length > 0 || Boolean(preferences.sourceOrder?.length));
+  const subscribedSourceIds = (hasExplicitSubscriptionState
+    ? uniqueStrings(preferences.subscribedSourceIds ?? [])
+    : defaultSubscribedSourceIds
+  );
 
   return {
     favoriteItemIds: uniqueStrings(preferences.favoriteItemIds ?? []),
@@ -1466,6 +1593,15 @@ function getDefaultSourceIds(sources: BoardSource[]) {
     .map((source) => source.id);
 }
 
+function getDefaultSubscribedSourceIds(sources: BoardSource[]) {
+  const sortedSources = sources.slice().sort((a, b) => a.priority - b.priority);
+  const explicitlySubscribedSources = sortedSources.filter((source) => source.defaultSubscribed);
+
+  return (explicitlySubscribedSources.length ? explicitlySubscribedSources : sortedSources).map(
+    (source) => source.id
+  );
+}
+
 function orderSources(sources: BoardSource[], sourceOrder: string[]) {
   const order = mergeSourceOrder(sourceOrder, getDefaultSourceIds(sources));
   const orderIndex = new Map(order.map((sourceId, index) => [sourceId, index]));
@@ -1476,8 +1612,7 @@ function orderSources(sources: BoardSource[], sourceOrder: string[]) {
 }
 
 function mergeSourceOrder(order: string[], defaultSourceIds: string[]) {
-  const defaultSet = new Set(defaultSourceIds);
-  const cleanOrder = uniqueStrings(order).filter((sourceId) => defaultSet.has(sourceId));
+  const cleanOrder = uniqueStrings(order);
 
   return [
     ...cleanOrder,
@@ -1494,6 +1629,24 @@ function moveBefore(order: string[], activeSourceId: string, overSourceId: strin
   }
 
   nextOrder.splice(overIndex, 0, activeSourceId);
+  return nextOrder;
+}
+
+function moveAfterLastSubscribed(
+  order: string[],
+  activeSourceId: string,
+  subscribedSourceIds: Set<string>
+) {
+  const nextOrder = order.filter((sourceId) => sourceId !== activeSourceId);
+  let lastSubscribedIndex = -1;
+
+  nextOrder.forEach((sourceId, index) => {
+    if (subscribedSourceIds.has(sourceId)) {
+      lastSubscribedIndex = index;
+    }
+  });
+
+  nextOrder.splice(lastSubscribedIndex + 1, 0, activeSourceId);
   return nextOrder;
 }
 
