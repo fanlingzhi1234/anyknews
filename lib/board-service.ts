@@ -84,6 +84,14 @@ export type RefreshResult = {
   status: "success" | "skipped" | "error";
 };
 
+export type SourceItemsPage = {
+  sourceId: string;
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  items: BoardItem[];
+};
+
 type SourceCacheEntry = {
   error?: string;
   expiresAt: number;
@@ -107,6 +115,7 @@ const defaultCacheTtlMs = getEnvSeconds("ANYKNEWS_CACHE_TTL_SECONDS", 10 * 60) *
 const errorCacheTtlMs = getEnvSeconds("ANYKNEWS_ERROR_CACHE_TTL_SECONDS", 2 * 60) * 1000;
 const sourceItemLimit = getPositiveIntegerEnv("ANYKNEWS_SOURCE_ITEM_LIMIT", 50);
 const boardItemLimit = getPositiveIntegerEnv("ANYKNEWS_BOARD_ITEM_LIMIT", 8);
+const sourcePageItemLimit = getPositiveIntegerEnv("ANYKNEWS_SOURCE_PAGE_ITEM_LIMIT", 8);
 const maxBoardSources = getPositiveIntegerEnv("ANYKNEWS_MAX_BOARD_SOURCES", 80);
 const failureBackoffMs = getEnvSeconds("ANYKNEWS_FAILURE_BACKOFF_SECONDS", 300) * 1000;
 const sourceCacheTtlMs: Record<string, number> = {
@@ -141,6 +150,39 @@ export async function getSourceData(sourceId: string): Promise<BoardSource | und
   await loadSourceCacheFromDisk();
 
   return getCachedSource(sourceId) ?? getCompactBoardSource(sourceId) ?? getSeedSourceData(sourceId);
+}
+
+export async function getSourceItemsPage(
+  sourceId: string,
+  options: { page?: number; pageSize?: number; refresh?: RefreshMode } = {}
+): Promise<SourceItemsPage | undefined> {
+  await loadSourceCacheFromDisk();
+
+  if (options.refresh === "force") {
+    await refreshSource(sourceId, { intent: "manual" });
+  }
+
+  if (options.refresh === "stale") {
+    await refreshSource(sourceId, { intent: "pagination" });
+  }
+
+  const source = getCachedSource(sourceId) ?? getCompactBoardSource(sourceId) ?? getSeedSourceData(sourceId);
+
+  if (!source) {
+    return undefined;
+  }
+
+  const page = normalizePositiveInteger(options.page, 1);
+  const pageSize = Math.min(normalizePositiveInteger(options.pageSize, sourcePageItemLimit), 20);
+  const start = (page - 1) * pageSize;
+
+  return {
+    sourceId,
+    page,
+    pageSize,
+    totalItems: source.items.length,
+    items: source.items.slice(start, start + pageSize)
+  };
 }
 
 export async function refreshSources(
@@ -558,6 +600,12 @@ function normalizeItemLimit(itemLimit?: number) {
     : boardItemLimit;
 }
 
+function normalizePositiveInteger(value: number | undefined, fallback: number) {
+  return Number.isFinite(value) && value !== undefined && value > 0
+    ? Math.floor(value)
+    : fallback;
+}
+
 function limitBoardSourceItems(source: BoardSource, itemLimit: number): BoardSource {
   const items = source.items.slice(0, itemLimit);
 
@@ -565,7 +613,7 @@ function limitBoardSourceItems(source: BoardSource, itemLimit: number): BoardSou
     ...source,
     diagnostic: {
       ...source.diagnostic,
-      itemCount: items.length
+      itemCount: source.items.length
     },
     items
   };

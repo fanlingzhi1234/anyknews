@@ -87,6 +87,7 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [refreshingSourceId, setRefreshingSourceId] = useState<string | null>(null);
+  const [loadingPageSourceId, setLoadingPageSourceId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshSummary, setRefreshSummary] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("subscriptions");
@@ -245,6 +246,44 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
       setError("单源刷新失败，已保留当前列表");
     } finally {
       setRefreshingSourceId(null);
+    }
+  }
+
+  async function loadSourcePage(sourceId: string, page: number) {
+    setLoadingPageSourceId(sourceId);
+    setError(null);
+
+    try {
+      const response = await fetch(
+        `/api/sources/${sourceId}/items?page=${page}&pageSize=${CARD_ITEMS_PER_PAGE}&refresh=stale`,
+        {
+          cache: "no-store"
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`GET /api/sources/${sourceId}/items failed with ${response.status}`);
+      }
+
+      const payload = (await response.json()) as {
+        items: BoardSource["items"];
+        totalItems: number;
+      };
+
+      setBoard((current) => ({
+        ...current,
+        generatedAt: new Date().toISOString(),
+        sources: current.sources.map((source) =>
+          source.id === sourceId ? mergeSourcePage(source, payload.items, payload.totalItems) : source
+        )
+      }));
+
+      return true;
+    } catch {
+      setError("加载更多内容失败，正在显示已缓存内容");
+      return false;
+    } finally {
+      setLoadingPageSourceId(null);
     }
   }
 
@@ -758,8 +797,10 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
           <section className="boardGrid" aria-label="信息源卡片">
             {filteredSources.map((source) => (
               <SourceCard
+                isPageLoading={loadingPageSourceId === source.id}
                 isRefreshing={refreshingSourceId === source.id}
                 key={source.id}
+                onLoadPage={loadSourcePage}
                 onRefresh={refreshSource}
                 onToggleSourceSubscription={toggleSourceSubscription}
                 onToggleFavorite={(itemId) => togglePreferenceList("favoriteItemIds", itemId)}
@@ -782,7 +823,9 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
 }
 
 function SourceCard({
+  isPageLoading,
   isRefreshing,
+  onLoadPage,
   onRefresh,
   onToggleSourceSubscription,
   onToggleFavorite,
@@ -790,7 +833,9 @@ function SourceCard({
   preferences,
   source
 }: {
+  isPageLoading: boolean;
   isRefreshing: boolean;
+  onLoadPage: (sourceId: string, page: number) => Promise<boolean>;
   onRefresh: (sourceId: string) => Promise<void>;
   onToggleSourceSubscription: (sourceId: string) => void;
   onToggleFavorite: (itemId: string) => void;
@@ -799,20 +844,37 @@ function SourceCard({
   source: BoardSource;
 }) {
   const [currentPage, setCurrentPage] = useState(0);
-  const totalPages = Math.max(1, Math.ceil(source.items.length / CARD_ITEMS_PER_PAGE));
+  const totalItems = Math.max(source.items.length, source.diagnostic.itemCount);
+  const totalPages = Math.max(1, Math.ceil(totalItems / CARD_ITEMS_PER_PAGE));
   const pageStart = currentPage * CARD_ITEMS_PER_PAGE;
   const pageItems = source.items.slice(pageStart, pageStart + CARD_ITEMS_PER_PAGE);
-  const canPage = source.items.length > CARD_ITEMS_PER_PAGE;
+  const canPage = totalItems > CARD_ITEMS_PER_PAGE;
   const isSourceSubscribed = preferences.subscribedSourceIds.includes(source.id);
 
   useEffect(() => {
     setCurrentPage((page) => Math.min(page, totalPages - 1));
   }, [source.id, totalPages]);
 
+  async function goToPage(nextPage: number) {
+    const clampedPage = Math.max(0, Math.min(totalPages - 1, nextPage));
+    const loadedItemCount = source.items.length;
+    const neededItemCount = (clampedPage + 1) * CARD_ITEMS_PER_PAGE;
+
+    if (neededItemCount > loadedItemCount) {
+      const loaded = await onLoadPage(source.id, clampedPage + 1);
+
+      if (!loaded) {
+        return;
+      }
+    }
+
+    setCurrentPage(clampedPage);
+  }
+
   return (
     <article
       className={`sourceCard category-${source.categoryKey} ${source.status === "error" ? "sourceCard-error" : ""}`}
-      aria-busy={isRefreshing}
+      aria-busy={isRefreshing || isPageLoading}
       data-category-key={source.categoryKey}
       id={source.id}
     >
@@ -911,19 +973,19 @@ function SourceCard({
           <span className="pagerControls" aria-label={`${source.name} 分页`}>
             <button
               aria-label="上一页"
-              disabled={currentPage === 0}
-              onClick={() => setCurrentPage((page) => Math.max(0, page - 1))}
+              disabled={currentPage === 0 || isPageLoading}
+              onClick={() => void goToPage(currentPage - 1)}
               type="button"
             >
               <ChevronLeft size={16} strokeWidth={2.4} />
             </button>
             <span>
-              {currentPage + 1}/{totalPages}
+              {isPageLoading ? "加载中" : `${currentPage + 1}/${totalPages}`}
             </span>
             <button
               aria-label="下一页"
-              disabled={currentPage >= totalPages - 1}
-              onClick={() => setCurrentPage((page) => Math.min(totalPages - 1, page + 1))}
+              disabled={currentPage >= totalPages - 1 || isPageLoading}
+              onClick={() => void goToPage(currentPage + 1)}
               type="button"
             >
               <ChevronRight size={16} strokeWidth={2.4} />
@@ -951,6 +1013,27 @@ function SourceCard({
       </footer>
     </article>
   );
+}
+
+function mergeSourcePage(
+  source: BoardSource,
+  items: BoardSource["items"],
+  totalItems: number
+): BoardSource {
+  const byId = new Map(source.items.map((item) => [item.id, item]));
+
+  for (const item of items) {
+    byId.set(item.id, item);
+  }
+
+  return {
+    ...source,
+    diagnostic: {
+      ...source.diagnostic,
+      itemCount: Math.max(source.diagnostic.itemCount, totalItems, byId.size)
+    },
+    items: Array.from(byId.values())
+  };
 }
 
 function KeywordChips({
