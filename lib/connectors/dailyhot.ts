@@ -26,7 +26,7 @@ type DailyHotResponse = {
   title?: string;
 };
 
-const defaultDailyHotBaseUrl = "https://dailyhot.imsyy.top";
+const defaultDailyHotBaseUrl = "https://api-hot.imsyy.top";
 
 export async function fetchDailyHotItems(endpoint: string, label: string) {
   const url = getDailyHotUrl(endpoint);

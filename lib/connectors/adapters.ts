@@ -16,23 +16,25 @@ export function buildConnectorFromRecipe(source: SourceManifest): SourceConnecto
     return undefined;
   }
 
+  const label = source.name;
+
   return {
     id: source.id,
-    label: source.name,
+    label,
     async fetchItems() {
       const recipe = source.connector;
 
       switch (recipe.kind) {
         case "rss": {
           const xml = await fetchText(recipe.url);
-          return ensureItems(parseRssItems(xml, recipe.url), this.label);
+          return ensureItems(parseRssItems(xml, recipe.url), label);
         }
 
         case "rsshub":
-          return fetchRssHubItems(recipe.routes, this.label);
+          return fetchRssHubItems(recipe.routes, label);
 
         case "dailyhot":
-          return fetchDailyHotItems(recipe.endpoint, this.label);
+          return fetchDailyHotItems(recipe.endpoint, label);
 
         case "html-list": {
           const html = await fetchText(recipe.url);
@@ -43,13 +45,13 @@ export function buildConnectorFromRecipe(source: SourceManifest): SourceConnecto
               limit: SOURCE_FETCH_LIMIT,
               minTitleLength: recipe.minTitleLength
             }),
-            this.label
+            label
           );
         }
 
         case "json-list": {
           const payload = await fetchJson<unknown>(recipe.url);
-          return ensureItems(recipe.mapItems(payload).slice(0, SOURCE_FETCH_LIMIT), this.label);
+          return ensureItems(recipe.mapItems(payload).slice(0, SOURCE_FETCH_LIMIT), label);
         }
 
         case "custom":

@@ -35,6 +35,8 @@ const expectedDefaultIds = [
   "auto"
 ];
 
+const expectedCatalogOnlyIds = ["xiaohongshu-hot"];
+
 const ids = sourceCatalog.map((source) => source.id);
 const duplicates = ids.filter((id, index) => ids.indexOf(id) !== index);
 if (duplicates.length) {
@@ -67,6 +69,15 @@ for (const source of sourceCatalog) {
   if (source.catalogStatus === "live" && !getConnector(source.id)) {
     throw new Error(`${source.id} is live but has no connector`);
   }
+}
+
+const catalogOnlyIds = sourceCatalog
+  .filter((source) => source.catalogStatus === "catalog-only")
+  .map((source) => source.id)
+  .sort();
+
+if (catalogOnlyIds.join(",") !== expectedCatalogOnlyIds.join(",")) {
+  throw new Error(`Unexpected catalog-only sources: ${catalogOnlyIds.join(",") || "(none)"}`);
 }
 
 console.log(`Verified ${sourceCatalog.length} sources, ${defaultSubscribedSourceIds.length} default subscribed.`);
