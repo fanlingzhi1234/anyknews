@@ -5,9 +5,9 @@ Personal information-link aggregation dashboard.
 ## Current Status
 
 - Frontend: compact card wall with category-tinted source cards and a collapsed board-insights drawer.
-- API: `/api/boards`, `/api/sources/:sourceId/refresh`, `/go/:itemId`.
+- API: `/api/boards`, `/api/sources/:sourceId/refresh`, `/api/sources/:sourceId/items`, `/go/:itemId`.
 - Notifications: `/api/notifications/digest` for Feishu/email digests.
-- Data: no database. Source results live in an in-process TTL cache with typed seed fallback.
+- Data: no database. Source results live in an in-process TTL cache plus a compact disk cache with typed seed fallback.
 - Connectors: on-demand refresh for the configured source list, with DailyHotApi/RSSHub fallbacks where available and seed data retained when a source blocks unauthenticated access.
 - Personalization: browser-local source subscriptions, drag ordering, hidden sources, favorites, ignored items, focus keywords and blocked keywords.
 - Intelligence: trend radar, new-item movement, event clustering and source diagnostics derived from the currently loaded board data, tucked under the collapsed `看板洞察` section.
@@ -26,26 +26,43 @@ Opening the dashboard calls `/api/boards?refresh=stale`, which refreshes only so
 
 ## Dashboard Features
 
-- Card pagination: each source card shows 8 items per page while each connector can fetch up to `ANYKNEWS_SOURCE_ITEM_LIMIT` items.
-- Source subscriptions: the first navigation item is `我的订阅`; first-run defaults keep all current sources subscribed, and users can unsubscribe or hide sources locally.
-- Drag ordering: subscribed sources can be reordered in the source manager with browser-native drag and drop.
+- Card pagination: each source card shows 8 items per page; later pages are loaded from the single-source item API on demand.
+- Source subscriptions: the first navigation item is `我的订阅`; first-run defaults keep all current sources subscribed, and users can subscribe, unsubscribe or hide sources locally.
+- Source catalog: the source manager loads the full catalog only when opened. Unsubscribed catalog sources do not appear on the homepage.
+- Drag ordering: subscribed sources can be reordered, and catalog sources can be dragged into `我的订阅`.
 - Local personalization: favorite, ignore, focus keyword and blocked keyword rules are stored in browser `localStorage`.
 - Focus view: default focus keywords are `AI agent`, `机器人`, and `项目管理`; users can add or remove keywords in the rule panel.
 - Local reset: clear `anyknews.preferences.v2` in browser localStorage to reset source subscriptions, ordering and keyword preferences.
 - Board insights: trend radar, event clustering and source diagnostics are available under the compact `看板洞察` drawer below the main title. The drawer is collapsed by default so the user-facing page stays focused on source cards.
 
-## Cache Runtime
+## V1.1 Source Catalog And Cost Control
 
-AnyKnews intentionally avoids Postgres/Redis in the current lightweight version. The server process keeps source results in memory and falls back to typed seed data if a source fails or has not been fetched yet.
+AnyKnews intentionally avoids Postgres/Redis in the current lightweight version. The browser sends the subscribed source ids to the server, and the server fetches only those selected sources.
 
-Optional cache TTL environment variables:
+- Page open requests subscribed source ids and the first 8 items per source.
+- Low-cost subscribed sources refresh when stale.
+- Medium/high-cost subscribed sources refresh on page open only when the last successful refresh is older than 10 minutes.
+- Card pagination calls `/api/sources/:sourceId/items` and loads more items only for that source.
+- Manual card refresh fetches only that source and scrolls back to that card.
+- The server writes a compact disk cache at `.cache/anyknews/source-cache.json`.
+- The disk cache stores source metadata, title, summary, link, metrics, timestamps, diagnostics and backoff state.
+- The disk cache does not store full HTML, article bodies, images or raw connector payloads.
+
+Optional runtime environment variables:
 
 ```bash
+ANYKNEWS_DISK_CACHE_PATH=.cache/anyknews/source-cache.json
+ANYKNEWS_DISABLE_DISK_CACHE=false
 ANYKNEWS_CACHE_TTL_SECONDS=600
 ANYKNEWS_ERROR_CACHE_TTL_SECONDS=120
+ANYKNEWS_FAILURE_BACKOFF_SECONDS=300
 ANYKNEWS_GITHUB_CACHE_TTL_SECONDS=3600
 ANYKNEWS_ZHIHU_CACHE_TTL_SECONDS=120
+ANYKNEWS_BOARD_ITEM_LIMIT=8
+ANYKNEWS_SOURCE_PAGE_ITEM_LIMIT=8
 ANYKNEWS_SOURCE_ITEM_LIMIT=50
+ANYKNEWS_MAX_BOARD_SOURCES=80
+DAILYHOT_API_BASE_URL=https://api-hot.imsyy.top
 ANYKNEWS_DAILYHOT_BASE_URL=https://api-hot.imsyy.top
 ANYKNEWS_PUBLIC_RSSHUB_BASE_URLS=https://rsshub.app,https://rsshub.rssforever.com
 ```
@@ -67,10 +84,29 @@ ANYKNEWS_PUBLIC_RSSHUB_BASE_URLS=https://rsshub.app,https://rsshub.rssforever.co
 | 雪球 | Working with fallback | First-party hot topics endpoint with anonymous cookie, RSSHub `/xueqiu/today` fallback; set `XUEQIU_COOKIE` for stable production use |
 | 财新 | Working | HTML |
 | 汽车之家 | Working | `今日焦点`/latest list HTML |
+| Hacker News | Working | Official Firebase API |
+| Anthropic News | Working | Official news page HTML |
+| InfoQ | Working with fallback | RSSHub recipe |
+| 少数派 | Working with fallback | RSSHub recipe |
+| 虎嗅 | Working with fallback | RSSHub recipe |
+| 界面 | Working with fallback | RSSHub recipe |
+| 华尔街见闻 | Working with fallback | RSSHub recipe |
+| 东方财富 | Working with fallback | Public fast-news endpoint, homepage HTML fallback |
+| 懂车帝 | Working with fallback | DailyHotApi |
+| 晚点 | Working with fallback | HTML recipe |
+| 钛媒体 | Working with fallback | RSSHub recipe |
+| 微博热搜 | Working with fallback | DailyHotApi |
+| 抖音热点 | Working with fallback | DailyHotApi |
+| 小红书热点 | Catalog only | Waiting for a stable low-cost source |
+| 豆瓣 | Working with fallback | RSSHub recipe |
 
 ## Verification
 
 ```bash
+npx tsx scripts/verify-source-catalog.ts
+npx tsx scripts/verify-refresh-policy.ts
+npx tsx scripts/verify-source-cache-store.ts
+npx tsc --noEmit
 npm run lint
 npm run build
 docker compose config
