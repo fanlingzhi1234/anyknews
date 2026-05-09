@@ -26,10 +26,10 @@ type DailyHotResponse = {
   title?: string;
 };
 
-const defaultDailyHotBaseUrl = "https://api-hot.imsyy.top";
+const defaultDailyHotBaseUrl = "https://dailyhot.imsyy.top";
 
-export async function fetchDailyHotItems(route: string, label: string) {
-  const url = getDailyHotUrl(route);
+export async function fetchDailyHotItems(endpoint: string, label: string) {
+  const url = getDailyHotUrl(endpoint);
   const payload = await fetchJson<DailyHotResponse>(url);
   const code = payload.code ? Number(payload.code) : 200;
 
@@ -41,15 +41,15 @@ export async function fetchDailyHotItems(route: string, label: string) {
     (payload.data ?? [])
       .slice(0, SOURCE_FETCH_LIMIT)
       .map((item, index): FetchedItem => {
-        const id = item.id ? String(item.id) : `${route}-${index + 1}`;
+        const id = item.id ? String(item.id) : `${endpoint}-${index + 1}`;
         const hot =
           typeof item.hot === "number" ? compactNumber(item.hot) : normalizeText(String(item.hot ?? ""));
 
         return {
-          externalId: `${route}-${id}`,
+          externalId: `${endpoint}-${id}`,
           metric: hot || (index === 0 ? "新" : `${index + 1}`),
           publishedAt: normalizeDailyHotTimestamp(item.timestamp),
-          raw: { provider: "DailyHotApi", route },
+          raw: { provider: "DailyHotApi", route: endpoint },
           summary: stripHtml(item.desc ?? payload.title ?? "DailyHotApi 公开热榜兜底"),
           title: normalizeText(item.title ?? ""),
           url: item.url ?? item.mobileUrl ?? defaultDailyHotBaseUrl
@@ -60,10 +60,13 @@ export async function fetchDailyHotItems(route: string, label: string) {
   );
 }
 
-function getDailyHotUrl(route: string) {
-  const baseUrl = process.env.ANYKNEWS_DAILYHOT_BASE_URL?.trim() || defaultDailyHotBaseUrl;
+function getDailyHotUrl(endpoint: string) {
+  const baseUrl =
+    process.env.DAILYHOT_API_BASE_URL?.trim() ||
+    process.env.ANYKNEWS_DAILYHOT_BASE_URL?.trim() ||
+    defaultDailyHotBaseUrl;
 
-  return new URL(route, baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`).toString();
+  return new URL(endpoint, baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`).toString();
 }
 
 function normalizeDailyHotTimestamp(timestamp: DailyHotItem["timestamp"]) {

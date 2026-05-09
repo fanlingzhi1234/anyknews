@@ -1,3 +1,4 @@
+import { getConnector } from "@/lib/connectors";
 import { defaultSubscribedSourceIds, sourceCatalog } from "@/lib/sources/catalog";
 
 const expectedNewIds = [
@@ -61,6 +62,10 @@ for (const source of sourceCatalog) {
 
   if (source.catalogStatus === "catalog-only" && source.defaultSubscribed) {
     throw new Error(`${source.id} is catalog-only but default subscribed`);
+  }
+
+  if (source.catalogStatus === "live" && !getConnector(source.id)) {
+    throw new Error(`${source.id} is live but has no connector`);
   }
 }
 

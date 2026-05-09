@@ -1,5 +1,6 @@
 import { aibaseConnector } from "@/lib/connectors/aibase";
 import { autohomeConnector } from "@/lib/connectors/autohome";
+import { buildConnectorFromRecipe } from "@/lib/connectors/adapters";
 import { bilibiliConnector } from "@/lib/connectors/bilibili";
 import { caixinConnector } from "@/lib/connectors/caixin";
 import { gamerskyConnector } from "@/lib/connectors/gamersky";
@@ -12,8 +13,9 @@ import { toutiaoConnector } from "@/lib/connectors/toutiao";
 import { v2exConnector } from "@/lib/connectors/v2ex";
 import { xueqiuConnector } from "@/lib/connectors/xueqiu";
 import { zhihuConnector } from "@/lib/connectors/zhihu";
+import { sourceCatalog } from "@/lib/sources/catalog";
 
-const connectorList: SourceConnector[] = [
+const customConnectors: SourceConnector[] = [
   qbitaiConnector,
   aibaseConnector,
   githubTrendingConnector,
@@ -29,8 +31,12 @@ const connectorList: SourceConnector[] = [
   autohomeConnector
 ];
 
+const recipeConnectors = sourceCatalog
+  .map((source) => buildConnectorFromRecipe(source))
+  .filter((connector): connector is SourceConnector => Boolean(connector));
+
 export const connectors = new Map(
-  connectorList.map((connector) => [connector.id, connector])
+  [...recipeConnectors, ...customConnectors].map((connector) => [connector.id, connector])
 );
 
 export function getConnector(sourceId: string) {

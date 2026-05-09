@@ -398,7 +398,7 @@ export const v11CatalogSources: SourceManifest[] = [
     defaultSubscribed: false,
     fetchCost: "low",
     refreshPolicy: "auto",
-    catalogStatus: "live",
+    catalogStatus: "catalog-only",
     connector: { kind: "custom" },
     seedItems: [{ title: "Hacker News Top Stories", summary: "来自 Hacker News 的技术社区热门讨论", url: "https://news.ycombinator.com/" }]
   },
@@ -531,7 +531,7 @@ export const v11CatalogSources: SourceManifest[] = [
     defaultSubscribed: false,
     fetchCost: "medium",
     refreshPolicy: "budgeted",
-    catalogStatus: "live",
+    catalogStatus: "catalog-only",
     connector: { kind: "custom" },
     seedItems: [{ title: "东方财富财经资讯", summary: "A股、美股、科技公司和市场热点", url: "https://www.eastmoney.com/" }]
   },
