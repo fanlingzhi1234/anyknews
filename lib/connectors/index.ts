@@ -3,8 +3,10 @@ import { autohomeConnector } from "@/lib/connectors/autohome";
 import { buildConnectorFromRecipe } from "@/lib/connectors/adapters";
 import { bilibiliConnector } from "@/lib/connectors/bilibili";
 import { caixinConnector } from "@/lib/connectors/caixin";
+import { eastmoneyConnector } from "@/lib/connectors/eastmoney";
 import { gamerskyConnector } from "@/lib/connectors/gamersky";
 import { githubTrendingConnector } from "@/lib/connectors/github-trending";
+import { hackerNewsConnector } from "@/lib/connectors/hacker-news";
 import { kr36Connector } from "@/lib/connectors/kr36";
 import { qbitaiConnector } from "@/lib/connectors/qbitai";
 import type { SourceConnector } from "@/lib/connectors/types";
@@ -28,7 +30,9 @@ const customConnectors: SourceConnector[] = [
   gamerskyConnector,
   xueqiuConnector,
   caixinConnector,
-  autohomeConnector
+  autohomeConnector,
+  hackerNewsConnector,
+  eastmoneyConnector
 ];
 
 const recipeConnectors = sourceCatalog

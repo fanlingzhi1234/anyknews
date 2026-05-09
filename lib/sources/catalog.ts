@@ -399,7 +399,7 @@ export const v11CatalogSources: SourceManifest[] = [
     fetchCost: "low",
     refreshPolicy: "auto",
     catalogStatus: "live",
-    connector: { kind: "rss", url: "https://news.ycombinator.com/rss" },
+    connector: { kind: "custom" },
     seedItems: [{ title: "Hacker News Top Stories", summary: "来自 Hacker News 的技术社区热门讨论", url: "https://news.ycombinator.com/" }]
   },
   {
@@ -532,7 +532,7 @@ export const v11CatalogSources: SourceManifest[] = [
     fetchCost: "medium",
     refreshPolicy: "budgeted",
     catalogStatus: "live",
-    connector: { kind: "html-list", url: "https://www.eastmoney.com/", baseUrl: "https://www.eastmoney.com", hrefIncludes: ["/a/"], minTitleLength: 8 },
+    connector: { kind: "custom" },
     seedItems: [{ title: "东方财富财经资讯", summary: "A股、美股、科技公司和市场热点", url: "https://www.eastmoney.com/" }]
   },
   {
