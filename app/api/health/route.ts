@@ -40,7 +40,7 @@ export async function GET() {
         ).length,
         diskEntries: compactCacheEntries.length
       },
-      cacheMode: "memory",
+      cacheMode: process.env.ANYKNEWS_DISABLE_DISK_CACHE === "true" ? "memory" : "memory+disk",
       timezone: process.env.TZ || "Asia/Shanghai"
     },
     sources: {

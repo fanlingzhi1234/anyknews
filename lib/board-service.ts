@@ -107,6 +107,7 @@ const defaultCacheTtlMs = getEnvSeconds("ANYKNEWS_CACHE_TTL_SECONDS", 10 * 60) *
 const errorCacheTtlMs = getEnvSeconds("ANYKNEWS_ERROR_CACHE_TTL_SECONDS", 2 * 60) * 1000;
 const sourceItemLimit = getPositiveIntegerEnv("ANYKNEWS_SOURCE_ITEM_LIMIT", 50);
 const boardItemLimit = getPositiveIntegerEnv("ANYKNEWS_BOARD_ITEM_LIMIT", 8);
+const maxBoardSources = getPositiveIntegerEnv("ANYKNEWS_MAX_BOARD_SOURCES", 80);
 const failureBackoffMs = getEnvSeconds("ANYKNEWS_FAILURE_BACKOFF_SECONDS", 300) * 1000;
 const sourceCacheTtlMs: Record<string, number> = {
   general: getEnvSeconds("ANYKNEWS_ZHIHU_CACHE_TTL_SECONDS", 2 * 60) * 1000,
@@ -119,7 +120,7 @@ export async function getBoardData(options: BoardDataOptions = {}): Promise<Boar
   const selectedSourceIds = normalizeSourceIds(options.sourceIds);
 
   if (options.refresh === "force" || options.refresh === "stale") {
-    await refreshSources(options.refresh, selectedSourceIds);
+    await refreshSources(options.refresh, { sourceIds: selectedSourceIds });
   }
 
   return buildBoardPayload({
@@ -144,13 +145,18 @@ export async function getSourceData(sourceId: string): Promise<BoardSource | und
 
 export async function refreshSources(
   mode: Exclude<RefreshMode, "none">,
-  sourceIds = normalizeSourceIds()
+  options: { sourceIds?: string[] } = {}
 ) {
+  await loadSourceCacheFromDisk();
+
+  const sourceIds = normalizeSourceIds(options.sourceIds);
+
   await Promise.all(
     sourceIds.map((sourceId) =>
       refreshSource(sourceId, {
         force: mode === "force",
-        intent: mode === "force" ? "force" : "page-open"
+        intent: mode === "force" ? "force" : "page-open",
+        skipDiskLoad: true
       })
     )
   );
@@ -158,9 +164,11 @@ export async function refreshSources(
 
 export async function refreshSource(
   sourceId: string,
-  options: { intent?: RefreshIntent; force?: boolean } = {}
+  options: { intent?: RefreshIntent; force?: boolean; skipDiskLoad?: boolean } = {}
 ): Promise<RefreshResult> {
-  await loadSourceCacheFromDisk();
+  if (!options.skipDiskLoad) {
+    await loadSourceCacheFromDisk();
+  }
 
   const connector = getConnector(sourceId);
   const sourceManifest = sourceCatalogById.get(sourceId);
@@ -311,6 +319,10 @@ export async function refreshSource(
 export function getSeedSourceData(sourceId: string): BoardSource | undefined {
   const source = sourceConfigById.get(sourceId);
   return source ? normalizeSeedSource(source, new Date().toISOString()) : undefined;
+}
+
+export function validateRequestedSourceIds(sourceIds: string[]) {
+  return normalizeSourceIds(sourceIds);
 }
 
 export async function getItemById(itemId: string): Promise<BoardItem | undefined> {
@@ -537,7 +549,7 @@ function normalizeSourceIds(sourceIds?: string[]) {
     }
   }
 
-  return Array.from(uniqueIds);
+  return Array.from(uniqueIds).slice(0, maxBoardSources);
 }
 
 function normalizeItemLimit(itemLimit?: number) {

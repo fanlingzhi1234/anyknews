@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getBoardData, type RefreshMode } from "@/lib/board-service";
+import { getBoardData, validateRequestedSourceIds, type RefreshMode } from "@/lib/board-service";
 
 export const dynamic = "force-dynamic";
 
@@ -8,10 +8,17 @@ export async function GET(request: Request) {
   const refreshParam = url.searchParams.get("refresh");
   const refresh: RefreshMode =
     refreshParam === "force" ? "force" : refreshParam === "none" ? "none" : "stale";
-  const sourceIds = parseSourceIds(url.searchParams.get("sourceIds"));
+  const hasSourceIdsParam = url.searchParams.has("sourceIds");
+  const requestedSourceIds = parseSourceIds(url.searchParams.get("sourceIds"));
+  const sourceIds = hasSourceIdsParam ? validateRequestedSourceIds(requestedSourceIds ?? []) : undefined;
   const itemLimit = parseItemLimit(url.searchParams.get("itemLimit"));
   const includeCatalog = parseBoolean(url.searchParams.get("includeCatalog"));
 
+  if (hasSourceIdsParam && sourceIds?.length === 0) {
+    return NextResponse.json({ error: "No valid sourceIds provided" }, { status: 400 });
+  }
+
+  // Source manager views should request includeCatalog=true; the board defaults to subscribed sources.
   return NextResponse.json(await getBoardData({ includeCatalog, itemLimit, refresh, sourceIds }));
 }
 
