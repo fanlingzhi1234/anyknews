@@ -18,16 +18,14 @@ export type NewsItem = {
 
 export type NewsSource = Omit<SourceManifest, "seedItems" | "connector"> & {
   catalogStatus: SourceManifest["catalogStatus"];
-  connector: SourceManifest["connector"];
   items: NewsItem[];
 };
 
 export { categories };
 
-export const sources: NewsSource[] = sourceCatalog.map(({ seedItems, ...source }) => ({
-  ...source,
-  items: seedItems.map(toNewsItem)
-}));
+export const catalogSources: NewsSource[] = sourceCatalog.map(toNewsSource);
+
+export const sources: NewsSource[] = catalogSources.filter((source) => source.defaultSubscribed);
 
 export const sourceHomeUrls = Object.fromEntries(
   sourceCatalog.map((source) => [source.id, source.homeUrl])
@@ -39,5 +37,26 @@ function toNewsItem(item: SourceSeedItem): NewsItem {
     summary: item.summary ?? "",
     metric: item.metric ?? "",
     url: item.url ?? "#"
+  };
+}
+
+function toNewsSource(source: SourceManifest): NewsSource {
+  return {
+    id: source.id,
+    name: source.name,
+    board: source.board,
+    category: source.category,
+    tone: source.tone,
+    logo: source.logo,
+    color: source.color,
+    displayType: source.displayType,
+    footer: source.footer,
+    homeUrl: source.homeUrl,
+    priority: source.priority,
+    defaultSubscribed: source.defaultSubscribed,
+    fetchCost: source.fetchCost,
+    refreshPolicy: source.refreshPolicy,
+    catalogStatus: source.catalogStatus,
+    items: source.seedItems.map(toNewsItem)
   };
 }
