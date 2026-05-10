@@ -91,9 +91,7 @@ For an existing deployment directory, keep the server `.env`, then switch the co
 ```bash
 cd /opt/anyknews
 git remote -v
-git fetch origin --tags
-git checkout main
-git pull --ff-only origin main
+scripts/deploy-production.sh
 ```
 
 Do not leave production checked out on `v1.1`, `v1.2`, `codex/*`, `fix/*`, or any other non-production branch.
@@ -161,7 +159,7 @@ docker compose config
 Build and start:
 
 ```bash
-docker compose up -d --build app
+scripts/deploy-production.sh
 ```
 
 Check status and logs:

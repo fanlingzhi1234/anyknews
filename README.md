@@ -110,6 +110,7 @@ npx tsc --noEmit
 npm run lint
 npm run build
 docker compose config
+scripts/guard-production-release.sh
 ```
 
 ## CI/CD And Release Governance
@@ -133,11 +134,7 @@ git merge --ff-only <accepted-version-branch>
 git push origin main
 ssh <server-user>@<server-ip>
 cd /opt/anyknews
-git fetch origin --tags
-git checkout main
-git pull --ff-only origin main
-docker compose up -d --build app
-curl -fsS http://127.0.0.1:3000/api/health
+scripts/deploy-production.sh
 ```
 
 Keep `.env` only on the server. Notifications remain disabled unless the digest template is intentionally enabled.

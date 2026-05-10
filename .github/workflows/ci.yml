@@ -46,3 +46,7 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      - name: Production release guard
+        if: github.ref == 'refs/heads/main'
+        run: scripts/guard-production-release.sh

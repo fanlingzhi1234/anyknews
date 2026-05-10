@@ -114,17 +114,20 @@ git push origin main --tags
 
 Production servers must use a project directory such as `/opt/<project>`.
 
-The server-side release command shape is:
+Each project should provide a guarded deploy script, for example:
 
 ```bash
 cd /opt/<project>
-git fetch origin --tags
-git checkout main
-git pull --ff-only origin main
-docker compose config
-docker compose up -d --build <service>
-curl -fsS http://127.0.0.1:<port>/api/health
+scripts/deploy-production.sh
 ```
+
+The deploy script must refuse to proceed unless all of these are true:
+
+- The worktree is clean.
+- The current release source is `main`, or an explicitly allowed immutable tag.
+- The local `main` commit exactly matches `origin/main`.
+- The compose config is valid.
+- The health endpoint passes after restart.
 
 If deploying from a tag instead of `main`:
 
@@ -176,6 +179,7 @@ When Codex is acting as the release operator:
 
 - State the current branch and intended release source before deployment.
 - Refuse to deploy a feature or version branch directly to production unless the user explicitly asks for a temporary preview deployment.
+- Use the project guarded deploy script rather than hand-running raw deploy steps when one exists.
 - If a server is found on a non-production branch, correct it back to `main` after the branch is merged.
 - Update release docs before merge.
 - Run verification before claiming completion.

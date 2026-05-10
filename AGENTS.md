@@ -25,17 +25,14 @@ npm run build
 
 Tencent Cloud production is `/opt/anyknews`.
 
-Use this release shape:
+Use the guarded deployment entrypoint:
 
 ```bash
 cd /opt/anyknews
-git fetch origin --tags
-git checkout main
-git pull --ff-only origin main
-docker compose config
-docker compose up -d --build app
-curl -fsS http://127.0.0.1:3000/api/health
+scripts/deploy-production.sh
 ```
+
+The deploy script refuses to run unless the server worktree is on clean `main` and matches `origin/main`.
 
 Before deploying, inspect running services and only restart `anyknews-app`.
 

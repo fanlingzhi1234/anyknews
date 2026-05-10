@@ -21,5 +21,6 @@ Rules:
 - Version branches such as `v1.1` are for development and acceptance only.
 - Production deploys only from `main` or an immutable release tag.
 - After user acceptance, merge the version branch into `main`, push `main`, then deploy Tencent Cloud from `main`.
+- Production deployment must use the guarded deploy script when available. For AnyKnews this is `scripts/deploy-production.sh`.
 - If production is found checked out on a version branch, correct it by merging that branch into `main` and redeploying from `main`.
 - Every production release must record the deployed branch, commit hash, server path, service name and health-check result.
