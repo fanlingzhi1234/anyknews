@@ -456,7 +456,7 @@ export const v11CatalogSources: SourceManifest[] = [
     fetchCost: "low",
     refreshPolicy: "auto",
     catalogStatus: "live",
-    connector: { kind: "rsshub", routes: ["/sspai/index"] },
+    connector: { kind: "custom" },
     seedItems: [{ title: "少数派最新文章", summary: "效率工具、数字生活和技术产品内容", url: "https://sspai.com/" }]
   },
   {
@@ -475,7 +475,7 @@ export const v11CatalogSources: SourceManifest[] = [
     fetchCost: "medium",
     refreshPolicy: "budgeted",
     catalogStatus: "live",
-    connector: { kind: "rsshub", routes: ["/huxiu/article"] },
+    connector: { kind: "rsshub", routes: ["/huxiu/channel/121", "/huxiu/article"] },
     seedItems: [{ title: "虎嗅商业科技资讯", summary: "商业、科技公司和产业观察", url: "https://www.huxiu.com/" }]
   },
   {
@@ -494,7 +494,7 @@ export const v11CatalogSources: SourceManifest[] = [
     fetchCost: "medium",
     refreshPolicy: "budgeted",
     catalogStatus: "live",
-    connector: { kind: "rsshub", routes: ["/jiemian/list/1"] },
+    connector: { kind: "rsshub", routes: ["/jiemian/lists/4", "/jiemian/lists/801", "/jiemian/lists/2"] },
     seedItems: [{ title: "界面新闻快讯", summary: "财经、商业和社会新闻", url: "https://www.jiemian.com/" }]
   },
   {
@@ -551,7 +551,7 @@ export const v11CatalogSources: SourceManifest[] = [
     fetchCost: "medium",
     refreshPolicy: "budgeted",
     catalogStatus: "live",
-    connector: { kind: "dailyhot", endpoint: "dongchedi" },
+    connector: { kind: "sixty-seconds", endpoint: "dongchedi" },
     seedItems: [{ title: "懂车帝汽车资讯", summary: "新车、车企、智能驾驶和新能源资讯", url: "https://www.dongchedi.com/" }]
   },
   {
@@ -589,7 +589,7 @@ export const v11CatalogSources: SourceManifest[] = [
     fetchCost: "medium",
     refreshPolicy: "budgeted",
     catalogStatus: "live",
-    connector: { kind: "rsshub", routes: ["/tmtpost"] },
+    connector: { kind: "rsshub", routes: ["/tmtpost/new", "/tmtpost/column/6916385", "/tmtpost/column/3615534"] },
     seedItems: [{ title: "钛媒体科技商业资讯", summary: "科技、产业和资本市场观察", url: "https://www.tmtpost.com/" }]
   },
   {
@@ -608,7 +608,7 @@ export const v11CatalogSources: SourceManifest[] = [
     fetchCost: "medium",
     refreshPolicy: "budgeted",
     catalogStatus: "live",
-    connector: { kind: "dailyhot", endpoint: "weibo" },
+    connector: { kind: "sixty-seconds", endpoint: "weibo" },
     seedItems: [{ title: "微博热搜", summary: "全网社交热点和实时事件", url: "https://s.weibo.com/top/summary" }]
   },
   {
@@ -627,7 +627,7 @@ export const v11CatalogSources: SourceManifest[] = [
     fetchCost: "high",
     refreshPolicy: "manual",
     catalogStatus: "live",
-    connector: { kind: "dailyhot", endpoint: "douyin" },
+    connector: { kind: "sixty-seconds", endpoint: "douyin" },
     seedItems: [{ title: "抖音热点", summary: "短视频平台热点内容，默认按需刷新", url: "https://www.douyin.com/hot" }]
   },
   {
@@ -645,9 +645,9 @@ export const v11CatalogSources: SourceManifest[] = [
     defaultSubscribed: false,
     fetchCost: "high",
     refreshPolicy: "manual",
-    catalogStatus: "catalog-only",
-    connector: { kind: "custom" },
-    seedItems: [{ title: "小红书热点待接入", summary: "先加入目录，等待稳定低成本接口后接入", url: "https://www.xiaohongshu.com/" }]
+    catalogStatus: "live",
+    connector: { kind: "sixty-seconds", endpoint: "rednote" },
+    seedItems: [{ title: "小红书热点", summary: "小红书社区实时热点和搜索趋势", url: "https://www.xiaohongshu.com/" }]
   },
   {
     id: "douban",
@@ -665,7 +665,7 @@ export const v11CatalogSources: SourceManifest[] = [
     fetchCost: "medium",
     refreshPolicy: "budgeted",
     catalogStatus: "live",
-    connector: { kind: "rsshub", routes: ["/douban/explore"] },
+    connector: { kind: "rsshub", routes: ["/douban/list/subject_real_time_hotest", "/douban/explore", "/douban/list/movie_real_time_hotest"] },
     seedItems: [{ title: "豆瓣热门内容", summary: "图书、影视、小组和社区热门内容", url: "https://www.douban.com/" }]
   }
 ];

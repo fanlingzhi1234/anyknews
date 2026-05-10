@@ -64,7 +64,8 @@ ANYKNEWS_SOURCE_ITEM_LIMIT=50
 ANYKNEWS_MAX_BOARD_SOURCES=80
 DAILYHOT_API_BASE_URL=https://api-hot.imsyy.top
 ANYKNEWS_DAILYHOT_BASE_URL=https://api-hot.imsyy.top
-ANYKNEWS_PUBLIC_RSSHUB_BASE_URLS=https://rsshub.app,https://rsshub.rssforever.com
+ANYKNEWS_SIXTY_SECONDS_BASE_URLS=https://60s.viki.moe
+ANYKNEWS_PUBLIC_RSSHUB_BASE_URLS=https://rsshub.app,https://rsshub.rssforever.com,https://rsshub.agrreader.com,https://rsshub.chn.moe,https://rsshub.gneko.io,https://rsshub.ddsrem.com,https://rsshub.ixk.me
 ```
 
 ## Connector Status
@@ -87,18 +88,18 @@ ANYKNEWS_PUBLIC_RSSHUB_BASE_URLS=https://rsshub.app,https://rsshub.rssforever.co
 | Hacker News | Working | Official Firebase API |
 | Anthropic News | Working | Official news page HTML |
 | InfoQ | Working with fallback | RSSHub recipe |
-| 少数派 | Working with fallback | RSSHub recipe |
-| 虎嗅 | Working with fallback | RSSHub recipe |
+| 少数派 | Working | First-party hot article API |
+| 虎嗅 | Working with fallback | RSSHub route fallback |
 | 界面 | Working with fallback | RSSHub recipe |
 | 华尔街见闻 | Working with fallback | RSSHub recipe |
 | 东方财富 | Working with fallback | Public fast-news endpoint, homepage HTML fallback |
-| 懂车帝 | Working with fallback | DailyHotApi |
+| 懂车帝 | Working with fallback | 60s API |
 | 晚点 | Working with fallback | HTML recipe |
 | 钛媒体 | Working with fallback | RSSHub recipe |
-| 微博热搜 | Working with fallback | DailyHotApi |
-| 抖音热点 | Working with fallback | DailyHotApi |
-| 小红书热点 | Catalog only | Waiting for a stable low-cost source |
-| 豆瓣 | Working with fallback | RSSHub recipe |
+| 微博热搜 | Working with fallback | 60s API |
+| 抖音热点 | Working with fallback | 60s API |
+| 小红书热点 | Working with fallback | 60s API |
+| 豆瓣 | Working with fallback | RSSHub route fallback |
 
 ## Verification
 

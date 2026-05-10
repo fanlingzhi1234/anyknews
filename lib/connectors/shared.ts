@@ -89,7 +89,7 @@ export function getPublicRssHubRoutes(route: string) {
     return [];
   }
 
-  const baseUrls = (process.env.ANYKNEWS_PUBLIC_RSSHUB_BASE_URLS ?? process.env.ANYKNEWS_PUBLIC_RSSHUB_BASE_URL ?? "https://rsshub.app,https://rsshub.rssforever.com")
+  const baseUrls = (process.env.ANYKNEWS_PUBLIC_RSSHUB_BASE_URLS ?? process.env.ANYKNEWS_PUBLIC_RSSHUB_BASE_URL ?? "https://rsshub.app,https://rsshub.rssforever.com,https://rsshub.agrreader.com,https://rsshub.chn.moe,https://rsshub.gneko.io,https://rsshub.ddsrem.com,https://rsshub.ixk.me")
     .split(",")
     .map((baseUrl) => baseUrl.trim())
     .filter(Boolean);

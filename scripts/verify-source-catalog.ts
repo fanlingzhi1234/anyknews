@@ -35,7 +35,7 @@ const expectedDefaultIds = [
   "auto"
 ];
 
-const expectedCatalogOnlyIds = ["xiaohongshu-hot"];
+const expectedCatalogOnlyIds: string[] = [];
 
 const ids = sourceCatalog.map((source) => source.id);
 const duplicates = ids.filter((id, index) => ids.indexOf(id) !== index);

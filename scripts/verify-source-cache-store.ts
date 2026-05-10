@@ -121,7 +121,7 @@ function injectRawItem(source: BoardSource): BoardSource {
 }
 
 function assertNoRawItems(payload: unknown) {
-  if (!isRecord(payload) || payload.version !== 1 || !Array.isArray(payload.entries)) {
+  if (!isRecord(payload) || payload.version !== 2 || !Array.isArray(payload.entries)) {
     throw new Error("Expected compact disk cache payload with versioned entries.");
   }
 

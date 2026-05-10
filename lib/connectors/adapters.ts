@@ -8,6 +8,7 @@ import {
   SOURCE_FETCH_LIMIT
 } from "@/lib/connectors/shared";
 import { fetchDailyHotItems } from "@/lib/connectors/dailyhot";
+import { fetchSixtySecondsItems } from "@/lib/connectors/sixty-seconds";
 import type { SourceConnector } from "@/lib/connectors/types";
 import type { SourceManifest } from "@/lib/sources/types";
 
@@ -35,6 +36,9 @@ export function buildConnectorFromRecipe(source: SourceManifest): SourceConnecto
 
         case "dailyhot":
           return fetchDailyHotItems(recipe.endpoint, label);
+
+        case "sixty-seconds":
+          return fetchSixtySecondsItems(recipe.endpoint, label);
 
         case "html-list": {
           const html = await fetchText(recipe.url);

@@ -1099,176 +1099,307 @@ button {
   opacity: .34;
 }
 
-.sourceManager {
+.subscriptionSettings {
   display: grid;
-  gap: 12px;
-  margin: 0 0 12px;
-  padding: 12px;
-  border: 1px solid #dbeafe;
-  border-radius: var(--card-radius);
-  background: #f8fbff;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  height: calc(100vh - 154px);
+  min-height: 560px;
+  overflow: hidden;
 }
 
-.sourceManagerHead {
+.subscriptionPanel,
+.sourceCatalogPanel,
+.subscriptionCategoryBlock {
+  border: 1px solid #dbe3ed;
+  border-radius: var(--card-radius);
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+}
+
+.subscriptionPanel {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 12px;
+  max-height: 100%;
+  padding: 14px;
+  overflow: hidden;
+}
+
+.subscriptionPanel-sticky {
+  position: relative;
+  top: auto;
+}
+
+.subscriptionPanelHead,
+.sourceCatalogIntro,
+.subscriptionCategoryHead {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
-.sourceManagerHead div {
+.subscriptionPanelHead div,
+.sourceCatalogIntro div,
+.subscriptionCategoryHead div {
   display: grid;
-  gap: 2px;
+  gap: 3px;
+  min-width: 0;
 }
 
-.sourceManagerHead strong,
-.sourceManagerTitle {
-  color: #253044;
-  font-size: 13px;
-  font-weight: 900;
+.subscriptionPanelHead strong,
+.sourceCatalogIntro strong,
+.subscriptionCategoryHead strong {
+  color: #1f2937;
+  font-size: 14px;
+  font-weight: 950;
 }
 
-.sourceManagerHead span {
+.subscriptionPanelHead span,
+.sourceCatalogIntro span,
+.subscriptionCategoryHead span,
+.subscriptionHint {
   color: #64748b;
   font-size: 12px;
   font-weight: 750;
+  line-height: 1.45;
 }
 
-.sourceManagerHead button {
+.subscriptionPanelHead button,
+.subscriptionCategoryHead button,
+.subscriptionSourceActions button,
+.subscriptionSourceActions a {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
-  height: 30px;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
   padding: 0 10px;
   border: 1px solid #dbe3ed;
   border-radius: 7px;
-  background: #fff;
+  background: #f8fafc;
   color: #475569;
   font-size: 12px;
   font-weight: 850;
 }
 
-.sourceManagerHead button:hover {
+.subscriptionPanelHead button:hover,
+.subscriptionCategoryHead button:hover:not(:disabled),
+.subscriptionSourceActions button:hover,
+.subscriptionSourceActions a:hover,
+.subscriptionSourceActions button.active {
   border-color: #bfdbfe;
   background: #eff6ff;
   color: #1d4ed8;
 }
 
-.sourceManagerColumns {
-  display: grid;
-  grid-template-columns: minmax(300px, .78fr) minmax(0, 1.22fr);
-  gap: 12px;
+.subscriptionCategoryHead button:disabled {
+  cursor: not-allowed;
+  opacity: .45;
 }
 
-.sourceManagerBlock {
+.subscriptionList {
   display: grid;
   align-content: start;
   gap: 8px;
-  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
 }
 
-.sourceCategoryGrid {
+.subscriptionList::-webkit-scrollbar,
+.sourceCatalogPanel::-webkit-scrollbar {
+  width: 7px;
+}
+
+.subscriptionList::-webkit-scrollbar-thumb,
+.sourceCatalogPanel::-webkit-scrollbar-thumb {
+  border-radius: 99px;
+  background: #cbd5e1;
+}
+
+.subscriptionRow {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 8px;
-}
-
-.sourceCategoryBlock {
-  display: grid;
-  align-content: start;
-  gap: 7px;
-  min-width: 0;
-  padding: 9px;
-  border: 1px solid #e3e8ef;
-  border-radius: 7px;
-  background: #fff;
-}
-
-.sourceCategoryBlock > strong {
-  color: #334155;
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.sourceManagerList {
-  display: grid;
-  gap: 6px;
-}
-
-.sourceManagerRow {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   min-width: 0;
-  padding: 7px;
+  min-height: 46px;
+  padding: 8px;
   border: 1px solid #e3e8ef;
   border-radius: 7px;
   background: #fff;
   transition: border-color 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
 }
 
-.sourceManagerRow[draggable="true"] {
+.subscriptionRow[draggable="true"] {
   cursor: grab;
 }
 
-.sourceManagerRow-dragging {
+.subscriptionRow-dragging,
+.subscriptionSourceCard-dragging {
   border-color: #93c5fd;
   box-shadow: 0 0 0 3px rgba(147, 197, 253, .26);
-  opacity: .62;
+  opacity: .66;
 }
 
-.sourceManagerRow-hidden {
-  opacity: .58;
-}
-
-.sourceManagerInfo {
+.subscriptionRowInfo {
   display: grid;
   gap: 2px;
   min-width: 0;
 }
 
-.sourceManagerInfo strong,
-.sourceManagerInfo span {
+.subscriptionRowInfo strong,
+.subscriptionRowInfo span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.sourceManagerInfo strong {
+.subscriptionRowInfo strong {
   color: #253044;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 900;
 }
 
-.sourceManagerInfo span {
+.subscriptionRowInfo span {
   color: #64748b;
   font-size: 11px;
   font-weight: 750;
 }
 
-.sourceDragHandle {
+.sourceCatalogPanel {
   display: grid;
-  width: 20px;
-  height: 20px;
-  place-items: center;
-  color: #94a3b8;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 13px;
+  max-height: 100%;
+  min-height: 0;
+  padding: 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
 }
 
-.sourceManagerRow button {
+.subscriptionCategoryGrid {
+  display: grid;
+  gap: 14px;
+}
+
+.subscriptionCategoryBlock {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  background:
+    linear-gradient(135deg, var(--subscription-category-bg, #f8fafc), #fff 52%),
+    #fff;
+}
+
+.subscriptionCategoryBlock-ai { --subscription-category-bg: #edf6ff; border-color: #cfe5ff; }
+.subscriptionCategoryBlock-tech { --subscription-category-bg: #f1f5f9; border-color: #d7dee8; }
+.subscriptionCategoryBlock-general { --subscription-category-bg: #fff1f2; border-color: #ffd8dd; }
+.subscriptionCategoryBlock-biz { --subscription-category-bg: #ecfdf5; border-color: #cceee0; }
+.subscriptionCategoryBlock-ent { --subscription-category-bg: #fff1f7; border-color: #ffd7e8; }
+.subscriptionCategoryBlock-finance { --subscription-category-bg: #fff7e6; border-color: #ffe3ad; }
+.subscriptionCategoryBlock-auto { --subscription-category-bg: #eff6ff; border-color: #d3e4ff; }
+
+.subscriptionSourceGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+
+.subscriptionSourceCard {
+  display: grid;
+  grid-template-rows: 1fr auto auto;
+  gap: 11px;
+  min-height: 172px;
+  padding: 12px;
+  border: 1px solid #e3e8ef;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, .86);
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.subscriptionSourceCard:hover,
+.subscriptionSourceCard-subscribed {
+  border-color: #bfdbfe;
+  box-shadow: 0 8px 20px rgba(37, 99, 235, .08);
+}
+
+.subscriptionSourceCard[draggable="true"] {
+  cursor: grab;
+}
+
+.subscriptionSourceMain {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+}
+
+.subscriptionSourceMain h3 {
+  margin: 0;
+  color: #1f2937;
+  font-size: 16px;
+  font-weight: 950;
+  line-height: 1.15;
+}
+
+.subscriptionSourceMain p {
+  display: -webkit-box;
+  margin: 6px 0 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.subscriptionSourceMeta,
+.subscriptionSourceActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.recommendScore {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.sourceDragHandle,
+.subscriptionIconButton {
   display: grid;
   width: 24px;
   height: 24px;
   place-items: center;
+  color: #94a3b8;
+}
+
+.subscriptionIconButton {
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: #8b93a1;
 }
 
-.sourceManagerRow button:hover,
-.sourceManagerRow button.active {
+.subscriptionIconButton:hover {
   background: #edf2f7;
-  color: #2563eb;
+  color: #dc2626;
 }
 
 .spin {
@@ -1325,10 +1456,15 @@ button {
     padding: 16px 12px 32px;
   }
 
-  .controlSurface,
   .insightRail,
-  .sourceManagerColumns {
+  .subscriptionSettings {
     grid-template-columns: 1fr;
+  }
+
+  .subscriptionSettings {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
   }
 
   .insightToggle span {
@@ -1345,13 +1481,18 @@ button {
     grid-column: 1 / -1;
   }
 
-  .controlSurface {
-    align-items: stretch;
-    flex-direction: column;
+  .subscriptionPanel-sticky {
+    position: static;
   }
 
-  .controlActions {
-    justify-content: space-between;
+  .subscriptionPanel,
+  .sourceCatalogPanel {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .subscriptionSourceGrid {
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   }
 
   .boardGrid {
@@ -1377,13 +1518,15 @@ button {
     gap: 4px;
   }
 
-  .keywordComposer {
-    grid-template-columns: 1fr;
+  .subscriptionPanelHead,
+  .subscriptionCategoryHead,
+  .subscriptionSourceActions {
+    align-items: stretch;
+    flex-direction: column;
   }
 
-  .keywordRow {
+  .subscriptionSourceGrid {
     grid-template-columns: 1fr;
-    gap: 5px;
   }
 
   .sourceCard {

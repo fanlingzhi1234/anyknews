@@ -37,6 +37,7 @@ export type SourceConnectorRecipe =
   | { kind: "rss"; url: string }
   | { kind: "rsshub"; routes: string[] }
   | { kind: "dailyhot"; endpoint: string }
+  | { kind: "sixty-seconds"; endpoint: string }
   | {
       kind: "html-list";
       url: string;

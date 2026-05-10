@@ -8,17 +8,16 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  EyeOff,
   ExternalLink,
   GripVertical,
+  Minus,
+  Plus,
   RefreshCcw,
   Search,
-  SlidersHorizontal,
-  Star,
-  X
+  Star
 } from "lucide-react";
 import { type BoardPayload, type BoardSource, type RefreshMode } from "@/lib/board-service";
-import { categories } from "@/lib/news-data";
+import { catalogSources, categories } from "@/lib/news-data";
 
 type NewsBoardProps = {
   initialBoard: BoardPayload;
@@ -29,7 +28,7 @@ const PREFERENCES_STORAGE_KEY = "anyknews.preferences.v2";
 const LEGACY_PREFERENCES_STORAGE_KEY = "anyknews.preferences.v1";
 const TREND_SNAPSHOT_STORAGE_KEY = "anyknews.trend-snapshot.v1";
 
-type ViewMode = "subscriptions" | "all" | "favorites" | "focus";
+type ViewMode = "subscriptions" | "all" | "subscription-settings";
 type ActiveCategory = "subscriptions" | "all" | (typeof categories)[number]["anchor"];
 
 type LocalPreferences = {
@@ -62,6 +61,13 @@ type LoadBoardOptions = {
   force?: boolean;
   includeCatalog?: boolean;
   refresh?: RefreshMode;
+  sourceIds?: string[];
+};
+
+type SourcePageLoadResult = {
+  loaded: boolean;
+  receivedItemCount: number;
+  totalItems: number;
 };
 
 const defaultPreferences: LocalPreferences = {
@@ -89,49 +95,53 @@ const TREND_TOPICS = [
 export function NewsBoard({ initialBoard }: NewsBoardProps) {
   const [board, setBoard] = useState(initialBoard);
   const [activeCategory, setActiveCategory] = useState<ActiveCategory>("subscriptions");
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [refreshingSourceId, setRefreshingSourceId] = useState<string | null>(null);
   const [loadingPageSourceId, setLoadingPageSourceId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshSummary, setRefreshSummary] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("subscriptions");
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isSourceManagerOpen, setIsSourceManagerOpen] = useState(false);
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
   const [isInsightsOpen, setIsInsightsOpen] = useState(false);
-  const [keywordDraft, setKeywordDraft] = useState("");
   const [preferences, setPreferences] = useState<LocalPreferences>(() =>
-    loadLocalPreferences(initialBoard.sources)
+    normalizePreferences(defaultPreferences, initialBoard.sources)
   );
+  const [hasLoadedPreferences, setHasLoadedPreferences] = useState(false);
   const [draggingSourceId, setDraggingSourceId] = useState<string | null>(null);
   const [trendChanges, setTrendChanges] = useState<TrendChange[]>([]);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const sourceCardRefs = useRef<Record<string, HTMLElement | null>>({});
   const normalizedPreferences = useMemo(
     () => normalizePreferences(preferences, board.sources),
     [board.sources, preferences]
   );
   const normalizedPreferencesRef = useRef(normalizedPreferences);
-  const isSourceManagerOpenRef = useRef(isSourceManagerOpen);
+  const hasSyncedLoadedPreferencesRef = useRef(false);
   const contentBoard = useMemo(
     () => getSubscribedBoard(board, normalizedPreferences),
     [board, normalizedPreferences]
   );
-  const statusStats = getStatusStats(contentBoard);
+  const displayBaseSources = useMemo(
+    () => viewMode === "subscriptions" ? contentBoard.sources : board.sources,
+    [board.sources, contentBoard.sources, viewMode]
+  );
+  const displayBoard = useMemo(
+    () => ({
+      ...board,
+      itemCount: displayBaseSources.reduce((count, source) => count + source.items.length, 0),
+      sourceCount: displayBaseSources.length,
+      sources: displayBaseSources
+    }),
+    [board, displayBaseSources]
+  );
+  const statusStats = getStatusStats(displayBoard);
   const personalizedSources = useMemo(
-    () => applyPreferences(contentBoard.sources, normalizedPreferences, viewMode),
-    [contentBoard.sources, normalizedPreferences, viewMode]
+    () => applyPreferences(displayBaseSources, normalizedPreferences, viewMode),
+    [displayBaseSources, normalizedPreferences, viewMode]
   );
   const categoryFilteredSources = useMemo(
     () => filterSourcesByCategory(personalizedSources, activeCategory),
     [activeCategory, personalizedSources]
   );
-  const filteredSources = useMemo(
-    () => filterBoardSources(categoryFilteredSources, searchQuery),
-    [categoryFilteredSources, searchQuery]
-  );
+  const filteredSources = categoryFilteredSources;
   const visibleItemCount = filteredSources.reduce(
     (count, source) => count + source.items.length,
     0
@@ -146,29 +156,34 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
     [contentBoard.sources, normalizedPreferences]
   );
   const diagnostics = useMemo(() => buildDiagnostics(contentBoard), [contentBoard]);
-  const isSearching = searchQuery.trim().length > 0;
   const activeScopeLabel = getActiveScopeLabel(activeCategory, viewMode);
   const managedSources = useMemo(
     () => orderSources(board.sources, normalizedPreferences.sourceOrder),
     [board.sources, normalizedPreferences.sourceOrder]
   );
+  const hasFullCatalog = board.sources.length >= catalogSources.length;
 
   useEffect(() => {
     normalizedPreferencesRef.current = normalizedPreferences;
   }, [normalizedPreferences]);
 
   useEffect(() => {
-    isSourceManagerOpenRef.current = isSourceManagerOpen;
-  }, [isSourceManagerOpen]);
+    setPreferences(loadLocalPreferences(initialBoard.sources));
+    setHasLoadedPreferences(true);
+  }, [initialBoard.sources]);
 
   useEffect(() => {
+    if (!hasLoadedPreferences) {
+      return;
+    }
+
     const nextPreferences = normalizePreferences(preferences, board.sources);
     window.localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(nextPreferences));
 
     if (JSON.stringify(nextPreferences) !== JSON.stringify(preferences)) {
       setPreferences(nextPreferences);
     }
-  }, [board.sources, preferences]);
+  }, [board.sources, hasLoadedPreferences, preferences]);
 
   useEffect(() => {
     const snapshot = buildTrendSnapshot(contentBoard.sources);
@@ -180,16 +195,17 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
 
   const loadBoard = useCallback(async (options: LoadBoardOptions = {}) => {
     const force = Boolean(options.force);
-    const includeCatalog = options.includeCatalog ?? isSourceManagerOpenRef.current;
+    const includeCatalog = options.includeCatalog ?? false;
     const refresh = options.refresh ?? (force ? "force" : "stale");
     const subscribedSourceIds = normalizedPreferencesRef.current.subscribedSourceIds;
+    const requestedSourceIds = options.sourceIds ?? subscribedSourceIds;
 
     setIsLoading(true);
     setError(null);
     setRefreshSummary(null);
 
     try {
-      if (!subscribedSourceIds.length && !includeCatalog) {
+      if (!requestedSourceIds.length && !includeCatalog) {
         setBoard((current) => ({
           ...current,
           generatedAt: new Date().toISOString(),
@@ -205,8 +221,8 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
         refresh
       });
 
-      if (subscribedSourceIds.length) {
-        params.set("sourceIds", subscribedSourceIds.join(","));
+      if (requestedSourceIds.length) {
+        params.set("sourceIds", requestedSourceIds.join(","));
       }
 
       if (includeCatalog) {
@@ -238,51 +254,39 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
   }, []);
 
   useEffect(() => {
-    void loadBoard();
-  }, [loadBoard]);
+    if (!hasLoadedPreferences || hasSyncedLoadedPreferencesRef.current) {
+      return;
+    }
+
+    const currentSourceIds = new Set(board.sources.map((source) => source.id));
+    const hasMissingSubscribedSource = normalizedPreferences.subscribedSourceIds.some(
+      (sourceId) => !currentSourceIds.has(sourceId)
+    );
+
+    if (!hasMissingSubscribedSource) {
+      hasSyncedLoadedPreferencesRef.current = true;
+      return;
+    }
+
+    hasSyncedLoadedPreferencesRef.current = true;
+    void loadBoard({ includeCatalog: true, refresh: "none" });
+  }, [board.sources, hasLoadedPreferences, loadBoard, normalizedPreferences.subscribedSourceIds]);
 
   useEffect(() => {
-    if (isSourceManagerOpen) {
+    if (!hasLoadedPreferences) {
+      return;
+    }
+
+    void loadBoard();
+  }, [hasLoadedPreferences, loadBoard]);
+
+  useEffect(() => {
+    if ((viewMode !== "subscriptions" || activeCategory !== "subscriptions") && !hasFullCatalog) {
       void loadBoard({ includeCatalog: true, refresh: "none" });
     }
-  }, [isSourceManagerOpen, loadBoard]);
-
-  useEffect(() => {
-    if (isSearchOpen) {
-      searchInputRef.current?.focus();
-    }
-  }, [isSearchOpen]);
-
-  const registerSourceCardRef = useCallback((sourceId: string, element: HTMLElement | null) => {
-    sourceCardRefs.current[sourceId] = element;
-  }, []);
-
-  const scrollSourceCardToTop = useCallback((sourceId: string) => {
-    sourceCardRefs.current[sourceId]?.scrollIntoView({
-      behavior: "smooth",
-      block: "start"
-    });
-  }, []);
-
-  useEffect(() => {
-    function handleShortcut(event: KeyboardEvent) {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        setIsSearchOpen(true);
-      }
-
-      if (event.key === "Escape") {
-        setSearchQuery("");
-        setIsSearchOpen(false);
-      }
-    }
-
-    window.addEventListener("keydown", handleShortcut);
-    return () => window.removeEventListener("keydown", handleShortcut);
-  }, []);
+  }, [activeCategory, hasFullCatalog, loadBoard, viewMode]);
 
   async function refreshSource(sourceId: string) {
-    scrollSourceCardToTop(sourceId);
     setRefreshingSourceId(sourceId);
     setError(null);
     setRefreshSummary(null);
@@ -310,7 +314,6 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
           ? `${sourceName} 刷新失败，正在使用兜底数据`
           : `${sourceName} 已刷新`
       );
-      requestAnimationFrame(() => scrollSourceCardToTop(sourceId));
     } catch {
       setError("单源刷新失败，已保留当前列表");
     } finally {
@@ -318,7 +321,7 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
     }
   }
 
-  async function loadSourcePage(sourceId: string, page: number) {
+  async function loadSourcePage(sourceId: string, page: number): Promise<SourcePageLoadResult> {
     setLoadingPageSourceId(sourceId);
     setError(null);
 
@@ -347,10 +350,18 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
         )
       }));
 
-      return true;
+      return {
+        loaded: true,
+        receivedItemCount: payload.items.length,
+        totalItems: payload.totalItems
+      };
     } catch {
       setError("加载更多内容失败，正在显示已缓存内容");
-      return false;
+      return {
+        loaded: false,
+        receivedItemCount: 0,
+        totalItems: 0
+      };
     } finally {
       setLoadingPageSourceId(null);
     }
@@ -381,79 +392,24 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
     }
   }
 
-  function togglePreferenceList(listKey: "favoriteItemIds" | "hiddenItemIds", itemId: string) {
-    setPreferences((current) => {
-      const currentSet = new Set(current[listKey]);
-
-      if (currentSet.has(itemId)) {
-        currentSet.delete(itemId);
-      } else {
-        currentSet.add(itemId);
-      }
-
-      return {
-        ...current,
-        [listKey]: Array.from(currentSet)
-      };
-    });
-  }
-
-  function addKeyword(kind: "includeKeywords" | "excludeKeywords") {
-    const normalizedKeyword = normalizeKeyword(keywordDraft);
-
-    if (!normalizedKeyword) {
-      return;
-    }
-
-    setPreferences((current) => ({
-      ...current,
-      [kind]: Array.from(new Set([...current[kind], normalizedKeyword]))
-    }));
-    setKeywordDraft("");
-  }
-
-  function removeKeyword(kind: "includeKeywords" | "excludeKeywords", keyword: string) {
-    setPreferences((current) => ({
-      ...current,
-      [kind]: current[kind].filter((item) => item !== keyword)
-    }));
-  }
-
   function toggleSourceSubscription(sourceId: string) {
     setPreferences((current) => {
       const normalized = normalizePreferences(current, board.sources);
       const sourceSet = new Set(normalized.subscribedSourceIds);
       let sourceOrder = normalized.sourceOrder;
+      const sourceById = getSourceById(board.sources);
 
       if (sourceSet.has(sourceId)) {
         sourceSet.delete(sourceId);
       } else {
         sourceSet.add(sourceId);
-        sourceOrder = moveAfterLastSubscribed(sourceOrder, sourceId, sourceSet);
+        sourceOrder = moveAfterCategorySubscriptions(sourceOrder, sourceId, sourceSet, sourceById);
       }
 
       return {
         ...normalized,
         sourceOrder,
         subscribedSourceIds: sourceOrder.filter((id) => sourceSet.has(id))
-      };
-    });
-  }
-
-  function toggleSourceHidden(sourceId: string) {
-    setPreferences((current) => {
-      const normalized = normalizePreferences(current, board.sources);
-      const hiddenSet = new Set(normalized.hiddenSourceIds);
-
-      if (hiddenSet.has(sourceId)) {
-        hiddenSet.delete(sourceId);
-      } else {
-        hiddenSet.add(sourceId);
-      }
-
-      return {
-        ...normalized,
-        hiddenSourceIds: normalized.sourceOrder.filter((id) => hiddenSet.has(id))
       };
     });
   }
@@ -466,6 +422,7 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
     setPreferences((current) => {
       const normalized = normalizePreferences(current, board.sources);
       const subscribedSet = new Set(normalized.subscribedSourceIds);
+      const sourceById = getSourceById(board.sources);
 
       if (!normalized.sourceOrder.includes(activeSourceId)) {
         return normalized;
@@ -475,12 +432,40 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
 
       const nextOrder = overSourceId
         ? moveBefore(normalized.sourceOrder, activeSourceId, overSourceId)
-        : moveAfterLastSubscribed(normalized.sourceOrder, activeSourceId, subscribedSet);
+        : moveAfterCategorySubscriptions(normalized.sourceOrder, activeSourceId, subscribedSet, sourceById);
 
       return {
         ...normalized,
         sourceOrder: nextOrder,
         subscribedSourceIds: nextOrder.filter((id) => subscribedSet.has(id))
+      };
+    });
+  }
+
+  function addCategorySubscriptions(sourceIds: string[]) {
+    if (!sourceIds.length) {
+      return;
+    }
+
+    setPreferences((current) => {
+      const normalized = normalizePreferences(current, board.sources);
+      const subscribedSet = new Set(normalized.subscribedSourceIds);
+      const sourceById = getSourceById(board.sources);
+      let sourceOrder = normalized.sourceOrder;
+
+      for (const sourceId of sourceIds) {
+        if (!sourceById.has(sourceId)) {
+          continue;
+        }
+
+        subscribedSet.add(sourceId);
+        sourceOrder = moveAfterCategorySubscriptions(sourceOrder, sourceId, subscribedSet, sourceById);
+      }
+
+      return {
+        ...normalized,
+        sourceOrder,
+        subscribedSourceIds: sourceOrder.filter((id) => subscribedSet.has(id))
       };
     });
   }
@@ -498,22 +483,38 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
     }));
   }
 
-  async function refreshVisibleSources() {
-    setIsLoading(true);
-    setError(null);
-    setRefreshSummary(null);
+  function openSubscriptionsView() {
+    setViewMode("subscriptions");
+    setActiveCategory("subscriptions");
+    scrollToTop();
+  }
 
-    try {
-      for (const source of filteredSources) {
-        await refreshSource(source.id);
-      }
+  function openSubscriptionSettings() {
+    setViewMode("subscription-settings");
+    setActiveCategory("all");
+    scrollToTop();
 
-      setRefreshSummary(`已刷新当前可见的 ${filteredSources.length} 个来源`);
-    } catch {
-      setError("可见来源刷新失败，已保留当前列表");
-    } finally {
-      setIsLoading(false);
+    if (!hasFullCatalog) {
+      void loadBoard({ includeCatalog: true, refresh: "none" });
     }
+  }
+
+  function openCatalogView(nextCategory: ActiveCategory) {
+    setViewMode("all");
+    setActiveCategory(nextCategory);
+    scrollToTop();
+
+    const sourceIds = getCatalogSourceIdsForScope(nextCategory, "all");
+
+    if (!sourceIds.length) {
+      return;
+    }
+
+    void loadBoard({
+      includeCatalog: true,
+      refresh: "force",
+      sourceIds
+    });
   }
 
   return (
@@ -530,24 +531,31 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
             href="#top"
             onClick={(event) => {
               event.preventDefault();
-              setViewMode("subscriptions");
-              setActiveCategory("subscriptions");
-              scrollToTop();
+              openSubscriptionsView();
             }}
           >
             我的订阅
           </a>
+          <a
+            aria-current={viewMode === "subscription-settings" ? "page" : undefined}
+            className={viewMode === "subscription-settings" ? "navActive" : undefined}
+            href="#subscription-settings"
+            onClick={(event) => {
+              event.preventDefault();
+              openSubscriptionSettings();
+            }}
+          >
+            订阅设置
+          </a>
           {categories.map((category) => (
             <a
-              aria-current={viewMode !== "subscriptions" && activeCategory === category.anchor ? "page" : undefined}
-              className={viewMode !== "subscriptions" && activeCategory === category.anchor ? "navActive" : undefined}
+              aria-current={viewMode === "all" && activeCategory === category.anchor ? "page" : undefined}
+              className={viewMode === "all" && activeCategory === category.anchor ? "navActive" : undefined}
               href={`#${category.anchor}`}
               key={category.anchor}
               onClick={(event) => {
                 event.preventDefault();
-                setViewMode("all");
-                setActiveCategory(category.anchor as ActiveCategory);
-                scrollToTop();
+                openCatalogView(category.anchor as ActiveCategory);
               }}
             >
               {category.label}
@@ -555,61 +563,19 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
           ))}
         </nav>
         <div className="actions">
-          {isSearchOpen ? (
-            <label className="searchBox">
-              <Search size={16} strokeWidth={2.3} />
-              <input
-                aria-label="搜索标题、摘要或来源"
-                id="news-search"
-                name="q"
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="搜索标题、摘要、来源"
-                ref={searchInputRef}
-                type="search"
-                value={searchQuery}
-              />
-              <button
-                aria-label="关闭搜索"
-                onClick={() => {
-                  setSearchQuery("");
-                  setIsSearchOpen(false);
-                }}
-                type="button"
-              >
-                <X size={15} strokeWidth={2.4} />
-              </button>
-            </label>
-          ) : null}
           <span className={`statusPill ${statusStats.error ? "statusPill-warn" : ""}`}>
             <span className="statusDot" />
-            {statusStats.ok}/{board.sourceCount} 可用
+            {statusStats.ok}/{displayBoard.sourceCount} 可用
           </span>
           <button
             className="iconButton"
-            aria-label="搜索"
-            onClick={() => setIsSearchOpen((current) => !current)}
-            type="button"
-          >
-            <Search size={18} strokeWidth={2.4} />
-          </button>
-          <button
-            className="iconButton"
-            aria-label="刷新当前可见来源"
+            aria-label="刷新当前页面"
             disabled={isLoading}
-            onClick={() => void refreshVisibleSources()}
-            title="刷新当前可见来源"
+            onClick={() => void loadBoard({ force: true })}
+            title="刷新当前页面"
             type="button"
           >
             <RefreshCcw className={isLoading ? "spin" : ""} size={18} strokeWidth={2.4} />
-          </button>
-          <button
-            className="iconButton"
-            aria-label="管理信息源"
-            onClick={() => setIsSourceManagerOpen((current) => !current)}
-            title="管理信息源"
-            type="button"
-          >
-            <SlidersHorizontal size={18} strokeWidth={2.4} />
           </button>
         </div>
       </header>
@@ -617,15 +583,20 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
       <main className="main" id="top">
         <div className="boardMeta">
           <div>
-            <strong>今日热榜</strong>
+            <strong>{viewMode === "subscription-settings" ? "订阅设置" : "今日热榜"}</strong>
             <span>
-              {isSearching
-                ? `${filteredSources.length} 个来源 · ${visibleItemCount} 条匹配 · ${statusStats.error} 个兜底`
+              {viewMode === "subscription-settings"
+                ? `${preferenceCounts.subscribed} 个订阅 · ${board.sources.length}/${catalogSources.length} 个来源`
                 : `${filteredSources.length} 个来源 · ${visibleItemCount} 条 · ${statusStats.error} 个兜底`}
             </span>
           </div>
-          <div>{activeScopeLabel} · 打开时更新 · AI日报 10:00</div>
+          <div>
+            {viewMode === "subscription-settings"
+              ? "拖拽排序 · 分类添加 · 来源预览"
+              : `${activeScopeLabel} · 打开时更新 · AI日报 10:00`}
+          </div>
         </div>
+        {viewMode !== "subscription-settings" ? (
         <section className="insightDisclosure" aria-label="看板洞察">
           <button
             aria-expanded={isInsightsOpen}
@@ -753,10 +724,6 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
             </>
           ) : null}
         </section>
-        {isSearching ? (
-          <div className="inlineNotice" role="status" aria-live="polite">
-            正在筛选：{searchQuery.trim()}
-          </div>
         ) : null}
         {refreshSummary ? (
           <div className="inlineNotice" role="status" aria-live="polite">
@@ -769,117 +736,19 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
             {error}
           </div>
         ) : null}
-        <section className="controlSurface" aria-label="个性化控制">
-          <div className="viewModes" role="group" aria-label="看板筛选">
-            {[
-              ["subscriptions", `我的订阅 ${preferenceCounts.subscribed}`],
-              ["all", "全部来源"],
-              ["favorites", `收藏 ${preferenceCounts.favorite}`],
-              ["focus", `关注词 ${preferences.includeKeywords.length}`]
-            ].map(([mode, label]) => (
-              <button
-                aria-pressed={viewMode === mode}
-                className={viewMode === mode ? "active" : ""}
-                key={mode}
-                onClick={() => {
-                  const nextMode = mode as ViewMode;
-
-                  setViewMode(nextMode);
-                  setActiveCategory(nextMode === "subscriptions" ? "subscriptions" : "all");
-                }}
-                type="button"
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <div className="controlActions">
-            <button
-              aria-pressed={preferences.showHidden}
-              className={preferences.showHidden ? "active" : ""}
-              onClick={() =>
-                setPreferences((current) => ({
-                  ...current,
-                  showHidden: !current.showHidden
-                }))
-              }
-              type="button"
-            >
-              <EyeOff size={15} strokeWidth={2.2} />
-              忽略 {preferenceCounts.hidden}
-            </button>
-            <button
-              aria-expanded={isSourceManagerOpen}
-              className={isSourceManagerOpen ? "active" : ""}
-              onClick={() => setIsSourceManagerOpen((current) => !current)}
-              type="button"
-            >
-              <SlidersHorizontal size={15} strokeWidth={2.2} />
-              信息源
-            </button>
-            <button
-              aria-expanded={isSettingsOpen}
-              className={isSettingsOpen ? "active" : ""}
-              onClick={() => setIsSettingsOpen((current) => !current)}
-              type="button"
-            >
-              <SlidersHorizontal size={15} strokeWidth={2.2} />
-              关键词
-            </button>
-          </div>
-        </section>
-        {isSourceManagerOpen ? (
-          <SourceManager
+        {viewMode === "subscription-settings" ? (
+          <SubscriptionSettingsPage
             draggingSourceId={draggingSourceId}
             onDragEnd={() => setDraggingSourceId(null)}
             onDragStart={setDraggingSourceId}
             onDropInSubscribed={placeSourceInSubscriptions}
             onReset={resetSourcePreferences}
-            onToggleHidden={toggleSourceHidden}
+            onAddCategorySubscriptions={addCategorySubscriptions}
             onToggleSubscription={toggleSourceSubscription}
             preferences={normalizedPreferences}
             sources={managedSources}
           />
-        ) : null}
-        {isSettingsOpen ? (
-          <section className="settingsPanel" aria-label="关键词规则">
-            <div className="keywordComposer">
-              <input
-                aria-label="新增关键词"
-                onChange={(event) => setKeywordDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    addKeyword("includeKeywords");
-                  }
-                }}
-                placeholder="输入关键词，例如 AI agent、机器人、项目管理"
-                type="text"
-                value={keywordDraft}
-              />
-              <button onClick={() => addKeyword("includeKeywords")} type="button">
-                加入关注
-              </button>
-              <button onClick={() => addKeyword("excludeKeywords")} type="button">
-                加入屏蔽
-              </button>
-            </div>
-            <KeywordChips
-              emptyText="暂无关注关键词"
-              keywords={preferences.includeKeywords}
-              label="关注"
-              onRemove={(keyword) => removeKeyword("includeKeywords", keyword)}
-              tone="focus"
-            />
-            <KeywordChips
-              emptyText="暂无屏蔽关键词"
-              keywords={preferences.excludeKeywords}
-              label="屏蔽"
-              onRemove={(keyword) => removeKeyword("excludeKeywords", keyword)}
-              tone="block"
-            />
-          </section>
-        ) : null}
-        {filteredSources.length ? (
+        ) : filteredSources.length ? (
           <section className="boardGrid" aria-label="信息源卡片">
             {filteredSources.map((source) => (
               <SourceCard
@@ -887,12 +756,7 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
                 isRefreshing={refreshingSourceId === source.id}
                 key={source.id}
                 onLoadPage={loadSourcePage}
-                onRegisterCardRef={registerSourceCardRef}
                 onRefresh={refreshSource}
-                onToggleSourceSubscription={toggleSourceSubscription}
-                onToggleFavorite={(itemId) => togglePreferenceList("favoriteItemIds", itemId)}
-                onToggleHidden={(itemId) => togglePreferenceList("hiddenItemIds", itemId)}
-                preferences={normalizedPreferences}
                 source={source}
               />
             ))}
@@ -901,7 +765,7 @@ export function NewsBoard({ initialBoard }: NewsBoardProps) {
           <section className="emptyState" role="status" aria-live="polite">
             <Search size={22} strokeWidth={2.1} />
             <strong>没有匹配的信息</strong>
-            <span>换个关键词，或清空搜索继续看全部来源。</span>
+            <span>当前分类暂无已加载来源，可切到订阅设置添加更多信息源。</span>
           </section>
         )}
       </main>
@@ -913,36 +777,49 @@ function SourceCard({
   isPageLoading,
   isRefreshing,
   onLoadPage,
-  onRegisterCardRef,
   onRefresh,
-  onToggleSourceSubscription,
-  onToggleFavorite,
-  onToggleHidden,
-  preferences,
   source
 }: {
   isPageLoading: boolean;
   isRefreshing: boolean;
-  onLoadPage: (sourceId: string, page: number) => Promise<boolean>;
-  onRegisterCardRef: (sourceId: string, element: HTMLElement | null) => void;
+  onLoadPage: (sourceId: string, page: number) => Promise<SourcePageLoadResult>;
   onRefresh: (sourceId: string) => Promise<void>;
-  onToggleSourceSubscription: (sourceId: string) => void;
-  onToggleFavorite: (itemId: string) => void;
-  onToggleHidden: (itemId: string) => void;
-  preferences: LocalPreferences;
   source: BoardSource;
 }) {
   const [currentPage, setCurrentPage] = useState(0);
+  const [knownLastPage, setKnownLastPage] = useState<number | null>(null);
+  const previousUpdatedAtRef = useRef(source.updatedAt);
   const totalItems = Math.max(source.items.length, source.diagnostic.itemCount);
-  const totalPages = Math.max(1, Math.ceil(totalItems / CARD_ITEMS_PER_PAGE));
+  const knownTotalPages = Math.max(1, Math.ceil(totalItems / CARD_ITEMS_PER_PAGE));
+  const canProbeNextPage = source.status === "ok" && knownLastPage === null;
+  const totalPages = knownLastPage ?? Math.max(
+    knownTotalPages,
+    canProbeNextPage ? currentPage + 2 : currentPage + 1
+  );
   const pageStart = currentPage * CARD_ITEMS_PER_PAGE;
   const pageItems = source.items.slice(pageStart, pageStart + CARD_ITEMS_PER_PAGE);
-  const canPage = totalItems > CARD_ITEMS_PER_PAGE;
-  const isSourceSubscribed = preferences.subscribedSourceIds.includes(source.id);
+  const canPage = totalItems > CARD_ITEMS_PER_PAGE || currentPage > 0 || canProbeNextPage;
 
   useEffect(() => {
-    setCurrentPage((page) => Math.min(page, totalPages - 1));
-  }, [source.id, totalPages]);
+    setCurrentPage((page) => Math.min(page, Math.max(knownTotalPages - 1, 0)));
+  }, [knownTotalPages, source.id]);
+
+  useEffect(() => {
+    if (previousUpdatedAtRef.current === source.updatedAt) {
+      return;
+    }
+
+    previousUpdatedAtRef.current = source.updatedAt;
+    setKnownLastPage(null);
+    setCurrentPage(0);
+  }, [source.updatedAt]);
+
+  useEffect(() => {
+    if (isRefreshing) {
+      setKnownLastPage(null);
+      setCurrentPage(0);
+    }
+  }, [isRefreshing]);
 
   async function goToPage(nextPage: number) {
     const clampedPage = Math.max(0, Math.min(totalPages - 1, nextPage));
@@ -950,11 +827,18 @@ function SourceCard({
     const neededItemCount = (clampedPage + 1) * CARD_ITEMS_PER_PAGE;
 
     if (neededItemCount > loadedItemCount) {
-      const loaded = await onLoadPage(source.id, clampedPage + 1);
+      const result = await onLoadPage(source.id, clampedPage + 1);
 
-      if (!loaded) {
+      if (!result.loaded) {
         return;
       }
+
+      if (!result.receivedItemCount || result.totalItems <= loadedItemCount) {
+        setKnownLastPage(currentPage + 1);
+        return;
+      }
+
+      setKnownLastPage(null);
     }
 
     setCurrentPage(clampedPage);
@@ -966,7 +850,6 @@ function SourceCard({
       aria-busy={isRefreshing || isPageLoading}
       data-category-key={source.categoryKey}
       id={source.id}
-      ref={(element) => onRegisterCardRef(source.id, element)}
     >
       <header className="sourceHead">
         <div className="sourceTitle">
@@ -981,16 +864,6 @@ function SourceCard({
             {source.status === "error" ? "兜底" : "实时"}
           </div>
           <div className="boardName">{source.board}</div>
-          <button
-            aria-label={isSourceSubscribed ? `取消订阅 ${source.name}` : `订阅 ${source.name}`}
-            aria-pressed={isSourceSubscribed}
-            className="sourceSubscribeButton"
-            onClick={() => onToggleSourceSubscription(source.id)}
-            title={isSourceSubscribed ? "取消订阅" : "订阅"}
-            type="button"
-          >
-            <Star fill={isSourceSubscribed ? "currentColor" : "none"} size={16} strokeWidth={2.2} />
-          </button>
         </div>
       </header>
 
@@ -1004,13 +877,10 @@ function SourceCard({
         <ol className="itemList">
           {pageItems.map((item, index) => {
             const rank = pageStart + index + 1;
-            const isFavorite = preferences.favoriteItemIds.includes(item.id);
-            const isHidden = preferences.hiddenItemIds.includes(item.id);
-            const isFocus = matchesAnyKeyword(item, preferences.includeKeywords);
 
             return (
             <li
-              className={`newsItem newsItem-${source.displayType} ${isFavorite ? "newsItem-favorite" : ""} ${isHidden ? "newsItem-hidden" : ""} ${isFocus ? "newsItem-focus" : ""}`}
+              className={`newsItem newsItem-${source.displayType}`}
               key={item.id}
             >
               <span className={`rank ${rank <= 3 ? `rank-${rank}` : ""}`}>
@@ -1028,26 +898,6 @@ function SourceCard({
               </a>
               <span className="itemSide">
                 <span className="metric">{item.metric}</span>
-                <span className="itemActions">
-                  <button
-                    aria-pressed={isFavorite}
-                    aria-label={isFavorite ? "取消收藏" : "收藏"}
-                    onClick={() => onToggleFavorite(item.id)}
-                    title={isFavorite ? "取消收藏" : "收藏"}
-                    type="button"
-                  >
-                    <Star fill={isFavorite ? "currentColor" : "none"} size={14} strokeWidth={2.2} />
-                  </button>
-                  <button
-                    aria-pressed={isHidden}
-                    aria-label={isHidden ? "取消忽略" : "忽略"}
-                    onClick={() => onToggleHidden(item.id)}
-                    title={isHidden ? "取消忽略" : "忽略"}
-                    type="button"
-                  >
-                    <EyeOff size={14} strokeWidth={2.2} />
-                  </button>
-                </span>
               </span>
             </li>
             );
@@ -1130,175 +980,152 @@ function mergeSourcePage(
   };
 }
 
-function KeywordChips({
-  emptyText,
-  keywords,
-  label,
-  onRemove,
-  tone
-}: {
-  emptyText: string;
-  keywords: string[];
-  label: string;
-  onRemove: (keyword: string) => void;
-  tone: "block" | "focus";
-}) {
-  return (
-    <div className="keywordRow">
-      <span>{label}</span>
-      <div className="keywordChips">
-        {keywords.length ? (
-          keywords.map((keyword) => (
-            <button
-              className={`keywordChip keywordChip-${tone}`}
-              key={keyword}
-              onClick={() => onRemove(keyword)}
-              type="button"
-            >
-              {keyword}
-              <X size={12} strokeWidth={2.4} />
-            </button>
-          ))
-        ) : (
-          <span className="mutedText">{emptyText}</span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function SourceManager({
+function SubscriptionSettingsPage({
   draggingSourceId,
+  onAddCategorySubscriptions,
   onDragEnd,
   onDragStart,
   onDropInSubscribed,
   onReset,
-  onToggleHidden,
   onToggleSubscription,
   preferences,
   sources
 }: {
   draggingSourceId: string | null;
+  onAddCategorySubscriptions: (sourceIds: string[]) => void;
   onDragEnd: () => void;
   onDragStart: (sourceId: string) => void;
   onDropInSubscribed: (activeSourceId: string, overSourceId?: string) => void;
   onReset: () => void;
-  onToggleHidden: (sourceId: string) => void;
   onToggleSubscription: (sourceId: string) => void;
   preferences: LocalPreferences;
   sources: BoardSource[];
 }) {
-  const availableSourcesByCategory = categories.map((category) => ({
+  const sourcesByCategory = categories.map((category) => ({
     ...category,
-    sources: sources.filter(
-      (source) =>
-        source.category === category.label &&
-        !preferences.subscribedSourceIds.includes(source.id)
-    )
+    sources: sources
+      .filter((source) => source.category === category.label)
+      .sort(compareSourcesByRecommendation)
   }));
   const subscribedSources = sources.filter((source) =>
     preferences.subscribedSourceIds.includes(source.id)
   );
-  const availableSourceCount = sources.length - subscribedSources.length;
 
   function handleSubscribedDrop(activeSourceId: string, overSourceId?: string) {
     onDropInSubscribed(activeSourceId, overSourceId);
   }
 
   return (
-    <section className="sourceManager" aria-label="信息源管理">
-      <div className="sourceManagerHead">
-        <div>
-          <strong>信息源</strong>
-          <span>{subscribedSources.length} 个订阅 · {availableSourceCount} 个可添加</span>
+    <section className="subscriptionSettings" id="subscription-settings" aria-label="订阅设置">
+      <aside className="subscriptionPanel subscriptionPanel-sticky">
+        <div className="subscriptionPanelHead">
+          <div>
+            <strong>我的订阅</strong>
+            <span>{subscribedSources.length} 个来源 · 拖拽调整阅读顺序</span>
+          </div>
+          <button onClick={onReset} type="button">
+            重置默认
+          </button>
         </div>
-        <button onClick={onReset} type="button">
-          重置
-        </button>
-      </div>
-      <div className="sourceManagerColumns">
-        <div className="sourceManagerBlock">
-          <div className="sourceManagerTitle">我的订阅</div>
-          <div
-            className="sourceManagerList sourceManagerList-sortable"
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={(event) => {
-              event.preventDefault();
+        <div className="subscriptionHint">
+          页面打开只拉取已订阅来源。想扩展信息面时，从右侧添加或拖入即可。
+        </div>
+        <div
+          className="subscriptionList subscriptionList-sortable"
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            event.preventDefault();
 
-              const activeSourceId = event.dataTransfer.getData("text/plain");
+            const activeSourceId = event.dataTransfer.getData("text/plain");
 
-              if (activeSourceId) {
-                handleSubscribedDrop(activeSourceId);
-              }
-            }}
-          >
-            {subscribedSources.length ? (
-              subscribedSources.map((source) => (
-                <SourceManagerRow
-                  draggable
-                  draggingSourceId={draggingSourceId}
-                  key={source.id}
-                  onDragEnd={onDragEnd}
-                  onDragStart={onDragStart}
-                  onDropInSubscribed={handleSubscribedDrop}
-                  onToggleHidden={onToggleHidden}
-                  onToggleSubscription={onToggleSubscription}
-                  preferences={preferences}
-                  role="subscribed"
-                  source={source}
-                />
-              ))
-            ) : (
-              <span className="mutedText">暂无订阅源，可从右侧拖入或直接添加。</span>
-            )}
+            if (activeSourceId) {
+              handleSubscribedDrop(activeSourceId);
+            }
+          }}
+        >
+          {subscribedSources.length ? (
+            subscribedSources.map((source) => (
+              <SubscriptionSourceRow
+                draggable
+                draggingSourceId={draggingSourceId}
+                key={source.id}
+                onDragEnd={onDragEnd}
+                onDragStart={onDragStart}
+                onDropInSubscribed={handleSubscribedDrop}
+                onToggleSubscription={onToggleSubscription}
+                source={source}
+              />
+            ))
+          ) : (
+            <span className="mutedText">暂无订阅源，可从右侧拖入或直接添加。</span>
+          )}
+        </div>
+      </aside>
+      <section className="sourceCatalogPanel" aria-label="可订阅来源">
+        <div className="sourceCatalogIntro">
+          <div>
+            <strong>可订阅来源</strong>
+            <span>按标签分类浏览，预览原站后再决定是否加入。</span>
           </div>
         </div>
-        <div className="sourceManagerBlock sourceManagerBlock-wide">
-          <div className="sourceManagerTitle">可添加来源</div>
-          <div className="sourceCategoryGrid">
-            {availableSourcesByCategory.map((group) => (
-              <div className="sourceCategoryBlock" key={group.anchor}>
-                <strong>{group.label}</strong>
-                <div className="sourceManagerList">
+        <div className="subscriptionCategoryGrid">
+          {sourcesByCategory.map((group) => {
+            const subscribedCount = group.sources.filter((source) =>
+              preferences.subscribedSourceIds.includes(source.id)
+            ).length;
+
+            return (
+              <section
+                className={`subscriptionCategoryBlock subscriptionCategoryBlock-${group.anchor}`}
+                key={group.anchor}
+              >
+                <div className="subscriptionCategoryHead">
+                  <div>
+                    <strong>{group.label}</strong>
+                    <span>{subscribedCount}/{group.sources.length} 已订阅</span>
+                  </div>
+                  <button
+                    disabled={!group.sources.some((source) => !preferences.subscribedSourceIds.includes(source.id))}
+                    onClick={() => onAddCategorySubscriptions(group.sources.map((source) => source.id))}
+                    type="button"
+                  >
+                    全部添加
+                  </button>
+                </div>
+                <div className="subscriptionSourceGrid">
                   {group.sources.length ? (
                     group.sources.map((source) => (
-                      <SourceManagerRow
+                      <SubscriptionSourceCard
                         draggable
                         draggingSourceId={draggingSourceId}
                         key={source.id}
                         onDragEnd={onDragEnd}
                         onDragStart={onDragStart}
-                        onDropInSubscribed={handleSubscribedDrop}
-                        onToggleHidden={onToggleHidden}
                         onToggleSubscription={onToggleSubscription}
                         preferences={preferences}
-                        role="available"
                         source={source}
                       />
                     ))
                   ) : (
-                    <span className="mutedText">已全部订阅</span>
+                    <span className="mutedText">暂无来源</span>
                   )}
                 </div>
-              </div>
-            ))}
-          </div>
+              </section>
+            );
+          })}
         </div>
-      </div>
+      </section>
     </section>
   );
 }
 
-function SourceManagerRow({
+function SubscriptionSourceRow({
   draggable = false,
   draggingSourceId,
   onDragEnd,
   onDragStart,
   onDropInSubscribed,
-  onToggleHidden,
   onToggleSubscription,
-  preferences,
-  role,
   source
 }: {
   draggable?: boolean;
@@ -1306,19 +1133,14 @@ function SourceManagerRow({
   onDragEnd: () => void;
   onDragStart: (sourceId: string) => void;
   onDropInSubscribed: (activeSourceId: string, overSourceId?: string) => void;
-  onToggleHidden: (sourceId: string) => void;
   onToggleSubscription: (sourceId: string) => void;
-  preferences: LocalPreferences;
-  role: "available" | "subscribed";
   source: BoardSource;
 }) {
-  const isSubscribed = preferences.subscribedSourceIds.includes(source.id);
-  const isHidden = preferences.hiddenSourceIds.includes(source.id);
   const isDragging = draggingSourceId === source.id;
 
   return (
     <div
-      className={`sourceManagerRow ${role === "available" ? "sourceManagerRow-available" : ""} ${isHidden ? "sourceManagerRow-hidden" : ""} ${isDragging ? "sourceManagerRow-dragging" : ""}`}
+      className={`subscriptionRow ${isDragging ? "subscriptionRow-dragging" : ""}`}
       draggable={draggable}
       onDragEnd={onDragEnd}
       onDragOver={(event) => event.preventDefault()}
@@ -1337,15 +1159,15 @@ function SourceManagerRow({
 
         const activeSourceId = event.dataTransfer.getData("text/plain");
 
-        if (role === "subscribed" && activeSourceId) {
+        if (activeSourceId && activeSourceId !== source.id) {
           onDropInSubscribed(activeSourceId, source.id);
         }
       }}
     >
       <span className={`logo logo-${source.tone}`}>{source.logo}</span>
-      <div className="sourceManagerInfo">
+      <div className="subscriptionRowInfo">
         <strong>{source.name}</strong>
-        <span>{source.board}</span>
+        <span>{source.category} · {source.board}</span>
       </div>
       {draggable ? (
         <span className="sourceDragHandle" title="拖拽排序">
@@ -1353,27 +1175,138 @@ function SourceManagerRow({
         </span>
       ) : null}
       <button
-        aria-label={isSubscribed ? `取消订阅 ${source.name}` : `订阅 ${source.name}`}
-        aria-pressed={isSubscribed}
-        className={isSubscribed ? "active" : ""}
+        aria-label={`取消订阅 ${source.name}`}
+        className="subscriptionIconButton"
         onClick={() => onToggleSubscription(source.id)}
-        title={isSubscribed ? "取消订阅" : "订阅"}
+        title="取消订阅"
         type="button"
       >
-        <Star fill={isSubscribed ? "currentColor" : "none"} size={14} strokeWidth={2.2} />
-      </button>
-      <button
-        aria-label={isHidden ? `显示 ${source.name}` : `隐藏 ${source.name}`}
-        aria-pressed={isHidden}
-        className={isHidden ? "active" : ""}
-        onClick={() => onToggleHidden(source.id)}
-        title={isHidden ? "显示来源" : "隐藏来源"}
-        type="button"
-      >
-        <EyeOff size={14} strokeWidth={2.2} />
+        <Minus size={14} strokeWidth={2.4} />
       </button>
     </div>
   );
+}
+
+function SubscriptionSourceCard({
+  draggable = false,
+  draggingSourceId,
+  onDragEnd,
+  onDragStart,
+  onToggleSubscription,
+  preferences,
+  source
+}: {
+  draggable?: boolean;
+  draggingSourceId: string | null;
+  onDragEnd: () => void;
+  onDragStart: (sourceId: string) => void;
+  onToggleSubscription: (sourceId: string) => void;
+  preferences: LocalPreferences;
+  source: BoardSource;
+}) {
+  const isSubscribed = preferences.subscribedSourceIds.includes(source.id);
+  const isDragging = draggingSourceId === source.id;
+  const recommendationScore = getSourceRecommendationScore(source);
+
+  return (
+    <article
+      className={`subscriptionSourceCard ${isSubscribed ? "subscriptionSourceCard-subscribed" : ""} ${isDragging ? "subscriptionSourceCard-dragging" : ""}`}
+      draggable={draggable}
+      onDragEnd={onDragEnd}
+      onDragStart={(event) => {
+        if (!draggable) {
+          return;
+        }
+
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", source.id);
+        onDragStart(source.id);
+      }}
+    >
+      <div className="subscriptionSourceMain">
+        <span className={`logo logo-${source.tone}`}>{source.logo}</span>
+        <div>
+          <h3>{source.name}</h3>
+          <p>{getSourceIntro(source)}</p>
+        </div>
+      </div>
+      <div className="subscriptionSourceMeta">
+        <span className={`sourceBadge ${source.status === "error" ? "sourceBadge-error" : ""}`}>
+          {source.status === "error" ? "兜底" : "实时"}
+        </span>
+        <span className="recommendScore">
+          <Star fill="currentColor" size={13} strokeWidth={2.2} />
+          {recommendationScore}
+        </span>
+      </div>
+      <div className="subscriptionSourceActions">
+        <button
+          aria-pressed={isSubscribed}
+          className={isSubscribed ? "active" : ""}
+          onClick={() => onToggleSubscription(source.id)}
+          type="button"
+        >
+          {isSubscribed ? (
+            <>
+              <Minus size={15} strokeWidth={2.4} />
+              已订阅
+            </>
+          ) : (
+            <>
+              <Plus size={15} strokeWidth={2.4} />
+              订阅
+            </>
+          )}
+        </button>
+        <a href={source.homeUrl} rel="noopener noreferrer" target="_blank">
+          <ExternalLink size={15} strokeWidth={2.4} />
+          预览
+        </a>
+        <span className="sourceDragHandle" title="拖拽到左侧订阅清单">
+          <GripVertical size={15} strokeWidth={2.4} />
+        </span>
+      </div>
+    </article>
+  );
+}
+
+function getSourceIntro(source: BoardSource) {
+  const catalogSource = catalogSources.find((item) => item.id === source.id);
+  const seedSummary = catalogSource?.items.find((item) => item.summary)?.summary;
+  const liveSummary = source.items.find((item) => item.summary)?.summary;
+
+  return liveSummary || seedSummary || source.footer || `${source.name} 的${source.board}内容源`;
+}
+
+function getSourceRecommendationScore(source: BoardSource) {
+  const catalogSource = catalogSources.find((item) => item.id === source.id);
+  let score = source.defaultSubscribed ? 94 : 82;
+
+  if (source.status === "ok") {
+    score += 4;
+  }
+
+  if (source.diagnostic.mode === "live") {
+    score += 2;
+  }
+
+  if (catalogSource?.fetchCost === "high") {
+    score -= 6;
+  } else if (catalogSource?.fetchCost === "medium") {
+    score -= 2;
+  }
+
+  return Math.max(68, Math.min(score, 99));
+}
+
+function compareSourcesByRecommendation(sourceA: BoardSource, sourceB: BoardSource) {
+  const scoreDelta = getSourceRecommendationScore(sourceB) - getSourceRecommendationScore(sourceA);
+
+  if (scoreDelta !== 0) {
+    return scoreDelta;
+  }
+
+  return sourceA.priority - sourceB.priority;
 }
 
 function getStatusStats(board: BoardPayload) {
@@ -1412,44 +1345,35 @@ function getActiveScopeLabel(activeCategory: ActiveCategory, viewMode: ViewMode)
 
   const labels: Record<ViewMode, string> = {
     all: "全部来源",
-    favorites: "收藏",
-    focus: "关注词",
+    "subscription-settings": "订阅设置",
     subscriptions: "我的订阅"
   };
 
   return labels[viewMode];
 }
 
-function scrollToTop() {
-  document.getElementById("top")?.scrollIntoView({ block: "start" });
-}
-
-function filterBoardSources(sources: BoardSource[], query: string) {
-  const normalizedQuery = query.trim().toLowerCase();
-
-  if (!normalizedQuery) {
-    return sources;
+function getCatalogSourceIdsForScope(activeCategory: ActiveCategory, viewMode: ViewMode) {
+  if (activeCategory === "subscriptions" || viewMode === "subscription-settings") {
+    return [];
   }
 
-  return sources
-    .map((source) => {
-      const sourceMatches = containsQuery(
-        [source.name, source.board, source.category],
-        normalizedQuery
-      );
-      const items = sourceMatches
-        ? source.items
-        : source.items.filter((item) =>
-            containsQuery([item.title, item.summary, item.metric], normalizedQuery)
-          );
+  if (activeCategory === "all") {
+    return catalogSources.map((source) => source.id);
+  }
 
-      return withFilteredItems(source, items);
-    })
-    .filter((source) => source.items.length > 0);
+  const categoryLabel = categories.find((category) => category.anchor === activeCategory)?.label;
+
+  if (!categoryLabel) {
+    return [];
+  }
+
+  return catalogSources
+    .filter((source) => source.category === categoryLabel)
+    .map((source) => source.id);
 }
 
-function containsQuery(values: string[], query: string) {
-  return values.some((value) => value.toLowerCase().includes(query));
+function scrollToTop() {
+  document.getElementById("top")?.scrollIntoView({ block: "start" });
 }
 
 function applyPreferences(
@@ -1459,79 +1383,11 @@ function applyPreferences(
 ) {
   const orderedSources = orderSources(sources, preferences.sourceOrder);
 
-  return orderedSources
-    .filter((source) => {
-      if (!preferences.subscribedSourceIds.includes(source.id)) {
-        return false;
-      }
-
-      if (preferences.hiddenSourceIds.includes(source.id)) {
-        return false;
-      }
-
-      if (viewMode === "subscriptions") {
-        return preferences.subscribedSourceIds.includes(source.id);
-      }
-
-      return true;
-    })
-    .map((source) => {
-      const isDerivedItemView =
-        viewMode === "favorites" ||
-        viewMode === "focus" ||
-        !preferences.showHidden ||
-        preferences.hiddenItemIds.length > 0 ||
-        preferences.excludeKeywords.length > 0;
-      const items = source.items.filter((item) => {
-        if (!preferences.showHidden && preferences.hiddenItemIds.includes(item.id)) {
-          return false;
-        }
-
-        if (preferences.excludeKeywords.length && matchesAnyKeyword(item, preferences.excludeKeywords)) {
-          return false;
-        }
-
-        if (viewMode === "favorites" && !preferences.favoriteItemIds.includes(item.id)) {
-          return false;
-        }
-
-        if (viewMode === "focus" && !matchesAnyKeyword(item, preferences.includeKeywords)) {
-          return false;
-        }
-
-        return true;
-      });
-
-      return !isDerivedItemView && items.length === source.items.length
-        ? source
-        : withFilteredItems(source, items);
-    })
-    .filter((source) => source.items.length > 0);
-}
-
-function withFilteredItems(source: BoardSource, items: BoardSource["items"]): BoardSource {
-  return {
-    ...source,
-    diagnostic: {
-      ...source.diagnostic,
-      itemCount: items.length
-    },
-    items
-  };
-}
-
-function matchesAnyKeyword(item: BoardSource["items"][number], keywords: string[]) {
-  if (!keywords.length) {
-    return false;
+  if (viewMode !== "subscriptions") {
+    return orderedSources;
   }
 
-  const text = [item.title, item.summary, item.sourceName].join(" ").toLowerCase();
-
-  return keywords.some((keyword) => text.includes(keyword.toLowerCase()));
-}
-
-function normalizeKeyword(keyword: string) {
-  return keyword.trim().replace(/\s+/g, " ");
+  return orderedSources.filter((source) => preferences.subscribedSourceIds.includes(source.id));
 }
 
 function loadLocalPreferences(sources: BoardSource[]): LocalPreferences {
@@ -1602,8 +1458,6 @@ function normalizePreferences(preferences: Partial<LocalPreferences>, sources: B
 
 function getPreferenceCounts(preferences: LocalPreferences) {
   return {
-    favorite: preferences.favoriteItemIds.length,
-    hidden: preferences.hiddenItemIds.length,
     subscribed: preferences.subscribedSourceIds.length
   };
 }
@@ -1670,6 +1524,47 @@ function moveAfterLastSubscribed(
 
   nextOrder.splice(lastSubscribedIndex + 1, 0, activeSourceId);
   return nextOrder;
+}
+
+function moveAfterCategorySubscriptions(
+  order: string[],
+  activeSourceId: string,
+  subscribedSourceIds: Set<string>,
+  sourceById: Map<string, BoardSource>
+) {
+  const activeSource = sourceById.get(activeSourceId);
+
+  if (!activeSource) {
+    return moveAfterLastSubscribed(order, activeSourceId, subscribedSourceIds);
+  }
+
+  const nextOrder = order.filter((sourceId) => sourceId !== activeSourceId);
+  let insertIndex = -1;
+
+  nextOrder.forEach((sourceId, index) => {
+    const source = sourceById.get(sourceId);
+
+    if (source?.categoryKey === activeSource.categoryKey && subscribedSourceIds.has(sourceId)) {
+      insertIndex = index;
+    }
+  });
+
+  if (insertIndex < 0) {
+    nextOrder.forEach((sourceId, index) => {
+      const source = sourceById.get(sourceId);
+
+      if (source?.categoryKey === activeSource.categoryKey) {
+        insertIndex = index;
+      }
+    });
+  }
+
+  nextOrder.splice(insertIndex + 1, 0, activeSourceId);
+  return nextOrder;
+}
+
+function getSourceById(sources: BoardSource[]) {
+  return new Map(sources.map((source) => [source.id, source]));
 }
 
 function uniqueStrings(values: string[]) {

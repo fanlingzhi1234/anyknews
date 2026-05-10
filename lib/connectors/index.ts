@@ -9,6 +9,7 @@ import { githubTrendingConnector } from "@/lib/connectors/github-trending";
 import { hackerNewsConnector } from "@/lib/connectors/hacker-news";
 import { kr36Connector } from "@/lib/connectors/kr36";
 import { qbitaiConnector } from "@/lib/connectors/qbitai";
+import { sspaiConnector } from "@/lib/connectors/sspai";
 import type { SourceConnector } from "@/lib/connectors/types";
 import { thePaperConnector } from "@/lib/connectors/the-paper";
 import { toutiaoConnector } from "@/lib/connectors/toutiao";
@@ -32,7 +33,8 @@ const customConnectors: SourceConnector[] = [
   caixinConnector,
   autohomeConnector,
   hackerNewsConnector,
-  eastmoneyConnector
+  eastmoneyConnector,
+  sspaiConnector
 ];
 
 const recipeConnectors = sourceCatalog

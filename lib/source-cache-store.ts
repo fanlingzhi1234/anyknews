@@ -18,7 +18,7 @@ export type CompactSourceCacheEntry = {
 };
 
 type DiskPayload = {
-  version: 1;
+  version: 2;
   entries: CompactSourceCacheEntry[];
 };
 
@@ -100,7 +100,7 @@ async function writeSourceCacheToDisk() {
     `.${path.basename(diskCachePath)}.${process.pid}.${Date.now()}.tmp`
   );
   const payload: DiskPayload = {
-    version: 1,
+    version: 2,
     entries: listCompactSourceCache()
   };
 
@@ -120,7 +120,7 @@ function isDiskCacheDisabled() {
 }
 
 function parseDiskPayload(payload: unknown) {
-  if (!isRecord(payload) || payload.version !== 1 || !Array.isArray(payload.entries)) {
+  if (!isRecord(payload) || payload.version !== 2 || !Array.isArray(payload.entries)) {
     return [];
   }
 
