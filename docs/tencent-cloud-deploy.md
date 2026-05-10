@@ -6,8 +6,9 @@ The current production target is intentionally lightweight:
 
 - One Docker Compose service: `app`
 - No Postgres, Redis, or persistent database
-- Data is fetched on page open/manual refresh and held in the server process TTL cache
-- Source subscriptions, drag ordering, hidden sources and keyword preferences are browser-local localStorage state
+- Data is fetched on page open/manual refresh and held in the server process TTL cache plus a compact disk cache
+- Source subscriptions and drag ordering are browser-local localStorage state
+- V1.1 keeps legacy favorite/keyword/ignore localStorage data for future reuse, but those controls are hidden from the current user-facing UI
 - Notification code is kept in the app, but cron delivery is not enabled for the first launch
 
 ## 1. Local Preflight
@@ -27,7 +28,7 @@ Expected health result:
 
 - `status` is `ok`
 - `runtime.cacheMode` is `memory`
-- `sources.sourceCount` is `13`
+- `sources.sourceCount` matches the current loaded catalog/source set. The V1.1 catalog target is 28 sources, with 13 default subscribed sources on first run.
 - `notification.notificationTokenConfigured` can be `false` for the first launch
 
 Run one forced source refresh:
@@ -36,25 +37,13 @@ Run one forced source refresh:
 curl -sS "http://127.0.0.1:3000/api/boards?refresh=force"
 ```
 
-At the time of the launch review, these sources were expected to fetch live data:
-
-- 量子位
-- AIbase
-- GitHub Trending
-- V2EX
-- 知乎热榜
-- 今日头条热榜
-- 澎湃新闻
-- 36氪
-- B 站热门
-- 游民星空
-- 财新
-- 汽车之家
+At the time of the V1.1 launch review, the catalog target was 28 sources. The current connector table in `README.md` is the source of truth for expected source methods and fallback status.
 
 These sources may still use fallback data under source-side limits:
 
 - 36氪: `资讯-推荐` page normally uses embedded page JSON, but can still return captcha/anti-crawl content from the server environment
 - 雪球: hot topics can use anonymous cookies, but `XUEQIU_COOKIE` is still more stable in production
+- RSSHub/60s-backed sources: availability depends on the public upstream service and should be validated after deploy
 
 This fallback state is acceptable for the first launch.
 
@@ -94,7 +83,9 @@ For an existing deployment directory, keep the server `.env`, then switch the co
 ```bash
 cd /opt/anyknews
 git remote -v
-git pull --ff-only
+git fetch origin
+git checkout v1.1
+git pull --ff-only origin v1.1
 ```
 
 ## 4. Configure `.env`
@@ -203,6 +194,11 @@ Verify manually:
 - 上一页/下一页可以翻看 50 条以内的数据
 - 外链点击会打开新 tab
 - 手动刷新按钮可以触发最新拉取
+- 点击顶部分类后，当前页筛选为对应分类的全部来源
+- `订阅设置` 是顶层管理页面，不展示具体新闻卡片
+- `订阅设置` 左侧订阅清单和右侧来源目录在桌面端独立滚动
+- 来源目录卡片展示 icon、名称、一句话简介、推荐指数和预览入口
+- 每个分类内的来源按照推荐指数从高到低排序
 - `看板洞察` 默认折叠，展开后可查看趋势雷达、事件聚合和源诊断
 - AI 资讯包含 AIbase，不再包含机器之心
 - 雪球卡片显示热门话题

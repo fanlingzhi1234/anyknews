@@ -9,7 +9,7 @@ Personal information-link aggregation dashboard.
 - Notifications: `/api/notifications/digest` for Feishu/email digests.
 - Data: no database. Source results live in an in-process TTL cache plus a compact disk cache with typed seed fallback.
 - Connectors: on-demand refresh for the configured source list, with DailyHotApi/RSSHub fallbacks where available and seed data retained when a source blocks unauthenticated access.
-- Personalization: browser-local source subscriptions, drag ordering, hidden sources, favorites, ignored items, focus keywords and blocked keywords.
+- Personalization: browser-local source subscriptions and drag ordering. V1.1 keeps older favorite/keyword/ignore localStorage fields for future reuse, but temporarily hides those controls from the user-facing UI.
 - Intelligence: trend radar, new-item movement, event clustering and source diagnostics derived from the currently loaded board data, tucked under the collapsed `看板洞察` section.
 - Infra: Docker Compose for the app only.
 
@@ -27,12 +27,11 @@ Opening the dashboard calls `/api/boards?refresh=stale`, which refreshes only so
 ## Dashboard Features
 
 - Card pagination: each source card shows 8 items per page; later pages are loaded from the single-source item API on demand.
-- Source subscriptions: the first navigation item is `我的订阅`; first-run defaults keep all current sources subscribed, and users can subscribe, unsubscribe or hide sources locally.
-- Source catalog: the source manager loads the full catalog only when opened. Unsubscribed catalog sources do not appear on the homepage.
-- Drag ordering: subscribed sources can be reordered, and catalog sources can be dragged into `我的订阅`.
-- Local personalization: favorite, ignore, focus keyword and blocked keyword rules are stored in browser `localStorage`.
-- Focus view: default focus keywords are `AI agent`, `机器人`, and `项目管理`; users can add or remove keywords in the rule panel.
-- Local reset: clear `anyknews.preferences.v2` in browser localStorage to reset source subscriptions, ordering and keyword preferences.
+- Source subscriptions: the top navigation includes `我的订阅` for the news board and `订阅设置` for source management. First-run defaults keep the current core sources subscribed.
+- Subscription settings: the management page does not show news cards. It uses an independent left subscribed-source list and a right source catalog grouped by category.
+- Source catalog: each source record shows icon, title, one-line intro, recommendation score and a preview action. Sources inside each category are sorted by recommendation score from high to low.
+- Drag ordering: subscribed sources can be reordered, and catalog sources can be dragged or added into `我的订阅`.
+- Local reset: clear `anyknews.preferences.v2` in browser localStorage, or use the reset action in `订阅设置`, to restore default subscriptions and ordering.
 - Board insights: trend radar, event clustering and source diagnostics are available under the compact `看板洞察` drawer below the main title. The drawer is collapsed by default so the user-facing page stays focused on source cards.
 
 ## V1.1 Source Catalog And Cost Control
