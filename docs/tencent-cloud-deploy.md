@@ -2,6 +2,14 @@
 
 This document is the first-production-launch checklist for AnyKnews on a Tencent Cloud CVM.
 
+AnyKnews follows the shared Codex workspace CI/CD release standard in `docs/codex-workspace-cicd-standard.md`.
+
+Important production rule:
+
+- Tencent Cloud production deploys only from `main` or an immutable release tag.
+- Version branches such as `v1.1` are development and acceptance branches only.
+- If a version branch has been accepted, merge it to `main` first, then deploy from `main`.
+
 The current production target is intentionally lightweight:
 
 - One Docker Compose service: `app`
@@ -83,10 +91,12 @@ For an existing deployment directory, keep the server `.env`, then switch the co
 ```bash
 cd /opt/anyknews
 git remote -v
-git fetch origin
-git checkout v1.1
-git pull --ff-only origin v1.1
+git fetch origin --tags
+git checkout main
+git pull --ff-only origin main
 ```
+
+Do not leave production checked out on `v1.1`, `v1.2`, `codex/*`, `fix/*`, or any other non-production branch.
 
 ## 4. Configure `.env`
 

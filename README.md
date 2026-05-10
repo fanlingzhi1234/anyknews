@@ -112,15 +112,30 @@ npm run build
 docker compose config
 ```
 
+## CI/CD And Release Governance
+
+AnyKnews follows the shared Codex workspace release standard in `docs/codex-workspace-cicd-standard.md`.
+
+- Development happens on feature or version branches.
+- User-accepted version branches are merged into `main`.
+- Tencent Cloud production deploys only from `main` or an immutable release tag.
+- `.github/workflows/ci.yml` runs catalog verification, refresh-policy verification, disk-cache verification, type check, lint and production build on pull requests, `main`, and version branches.
+- `AGENTS.md` records the Codex-specific release guardrails for this repo.
+
 ## Release Flow
 
 For the current lightweight deployment, publish code through Git and update the Tencent Cloud app from the remote repository:
 
 ```bash
-git push
+git checkout main
+git pull --ff-only origin main
+git merge --ff-only <accepted-version-branch>
+git push origin main
 ssh <server-user>@<server-ip>
 cd /opt/anyknews
-git pull --ff-only
+git fetch origin --tags
+git checkout main
+git pull --ff-only origin main
 docker compose up -d --build app
 curl -fsS http://127.0.0.1:3000/api/health
 ```
