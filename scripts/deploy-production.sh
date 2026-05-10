@@ -17,7 +17,22 @@ PRODUCTION_BRANCH="$PRODUCTION_BRANCH" REMOTE_NAME="$REMOTE_NAME" scripts/guard-
 
 docker compose config >/dev/null
 docker compose up -d --build "$SERVICE_NAME"
-curl -fsS "$HEALTH_URL" >/dev/null
+
+for attempt in $(seq 1 20); do
+  if curl -fsS "$HEALTH_URL" >/dev/null; then
+    health_ok=true
+    break
+  fi
+  sleep 2
+done
+
+if [[ "${health_ok:-false}" != "true" ]]; then
+  docker compose ps
+  fail_log="$(docker compose logs --tail 80 "$SERVICE_NAME" 2>/dev/null || true)"
+  printf '%s\n' "$fail_log" >&2
+  printf 'Production deploy failed: health check did not pass: %s\n' "$HEALTH_URL" >&2
+  exit 1
+fi
 
 printf 'Production deploy complete: branch=%s commit=%s service=%s health=%s\n' \
   "$PRODUCTION_BRANCH" \
